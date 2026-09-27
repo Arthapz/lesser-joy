@@ -39,7 +39,7 @@ runs:
          --mold=y \
          --cli=n \
          --gui=n \
-         --lto=${{ case(inputs.mode == 'release', 'y', 'n') }} \
+         --lto=n \
          --yes \
          ${{ case(inputs.compiler == 'llvm', '--toolchain=llvm', '') }} \
          ${{ case(inputs.compiler == 'llvm' && inputs.cpplib == 'libc++', '--runtimes="c++_static"', '') }} \
