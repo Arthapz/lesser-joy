@@ -52,9 +52,6 @@ jobs:
           arch: ${{ matrix.arch }}
           compiler: llvm
 
-      - run: ls '${{ runner.workspace }}/llvm'
-        shell: bash
-
       - name: Build & Tests
         id: build_and_tests
         uses: ./.github/actions/build
