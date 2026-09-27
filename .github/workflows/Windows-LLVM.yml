@@ -5,7 +5,7 @@ on:
     branches: [develop]
     paths-ignore:
       - .gitignore
-      - Windows-MSVC.yml
+      - Windows-LLVM.yml
       - LICENSE
       - README.md
 
@@ -13,27 +13,26 @@ on:
     branches: [develop]
     paths-ignore:
       - .gitignore
-      - Windows-MSVC.yml
+      - Windows-LLVM.yml
       - LICENSE
       - README.md
 
 jobs:
   build:
-    name: LLVM ${{ matrix.arch }} (${{ matrix.mode }})
+    name: LLVM ${{ matrix.arch }} (${{ matrix.cpplib }})
 
     strategy:
       fail-fast: false
       matrix:
         os: [windows-2025]
         arch: [x64]
-        compiler: [llvm]
         cpplib: [libc++, msstl]
 
     runs-on: ${{ matrix.os }}
     if: ${{ !contains(github.event.head_commit.message, 'ci skip') }}
 
     concurrency:
-      group: ${{ github.ref }}-${{ github.base_ref }}-${{ github.head_ref }}-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.arch }}-${{ matrix.cpplib }}
+      group: ${{ github.ref }}-${{ github.base_ref }}-${{ github.head_ref }}-${{ matrix.os }}-llvm-${{ matrix.arch }}-${{ matrix.cpplib }}
       cancel-in-progress: true
 
     steps:
@@ -51,7 +50,7 @@ jobs:
         with:
           os: windows
           arch: ${{ matrix.arch }}
-          compiler: ${{ matrix.compiler }}
+          compiler: llvm
 
       - name: Build & Tests
         id: build_and_tests
@@ -59,7 +58,7 @@ jobs:
         with:
           os: windows
           arch: ${{ matrix.arch }}
-          compiler: ${{ matrix.compiler }}
+          compiler: llvm
           cpplib: ${{ matrix.cpplib }}
           mode: release
           kind: static
@@ -67,11 +66,11 @@ jobs:
           cache_key: ${{ steps.bootstrap.outputs.cache_key }}
           additional_flags: |
             --plat=windows \
-            ${{ case(matrix.compiler == 'llvm', format('--sdk="{0}/llvm/llvm"', runner.workspace), '') }} \
+            --sdk=${{ runner.workspace }}/llvm/llvm \
             --policies="platform.longpaths"
 
       - name: Upload artifacts
         id: upload
         uses: ./.github/actions/upload
         with:
-          name: Windows-${{ matrix.arch }}-${{ matrix.compiler }}-${{ matrix.cpplib }}
+          name: Windows-${{ matrix.arch }}-LLVM-${{ matrix.cpplib }}
