@@ -52,7 +52,7 @@ jobs:
           arch: ${{ matrix.arch }}
           compiler: llvm
 
-      - run: ls ${{ runner.workspace }}/llvm
+      - run: ls '${{ runner.workspace }}/llvm'
         shell: bash
 
       - name: Build & Tests
@@ -68,7 +68,7 @@ jobs:
           cache_key: ${{ steps.bootstrap.outputs.cache_key }}
           additional_flags: |
             --plat=windows \
-            --sdk=${{ runner.workspace }}/llvm/llvm \
+            --sdk='${{ runner.workspace }}/llvm/llvm' \
             --policies="platform.longpaths"
 
       - name: Upload artifacts
