@@ -315,8 +315,6 @@ namespace lj::usb {
         CustomLoggedTryOr(get_wdf_memory(memory, report), monadic::discard(), dlog, "Failed to get USB data!");
 
         dlog("Received input report {}", view_of(report).subspan(count));
-        // array_view<const u8> { std::bit_cast<const
-        // u8*>(stdr::data(report)), count });
 
         ctx.last_input_report.write([&report_ = report, count](auto& report) mutable noexcept {
             report = input_report { clock::now(), count, std::move(report_) };
