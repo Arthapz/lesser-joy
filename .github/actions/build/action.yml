@@ -38,11 +38,10 @@ runs:
          --arch=${{ case(inputs.arch  == 'x64' && inputs.os == 'linux', 'x86_64', inputs.arch) }} \
          --mode=${{ inputs.mode }} \
          --kind=${{ inputs.kind }} \
-         --examples=y \
-         --tests=y \
          --sanitizers=n \
          --mold=y \
-         --on_ci=y \
+         --cli=n \
+         --gui=n \
          --lto=${{ case(inputs.mode == 'release', 'y', 'n') }} \
          --yes \
          ${{ case(inputs.compiler == 'llvm', '--toolchain=llvm', '') }} \
