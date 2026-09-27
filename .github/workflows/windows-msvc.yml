@@ -60,7 +60,6 @@ jobs:
           compiler: msvc
           cpplib: msstl
           mode: release
-          kind: static
           dep_hash: ${{ steps.bootstrap.outputs.dep_hash }}
           cache_key: ${{ steps.bootstrap.outputs.cache_key }}
           additional_flags: |

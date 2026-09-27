@@ -12,8 +12,6 @@ inputs:
     required: true
   mode:
     required: true
-  kind:
-    required: true
   dep_hash:
     required: true
   cache_key:
@@ -37,7 +35,6 @@ runs:
         xmake f \
          --arch=${{ case(inputs.arch  == 'x64' && inputs.os == 'linux', 'x86_64', inputs.arch) }} \
          --mode=${{ inputs.mode }} \
-         --kind=${{ inputs.kind }} \
          --sanitizers=n \
          --mold=y \
          --cli=n \
