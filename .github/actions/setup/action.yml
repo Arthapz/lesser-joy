@@ -85,6 +85,11 @@ runs:
     - uses: KamaranL/add-signtool-action@v1
       id: signtool
 
+    - run: |
+         echo "steps.signtool.outputs.signtool-${{ inputs.arch }}"
+         echo "steps.signtool.outputs.signtool-${{ inputs.arch }}" >> GITHUB_PATH
+      shell: bash
+
 outputs:
   dep_hash:
     value: ${{ steps.dep_hash.outputs.hash }}
