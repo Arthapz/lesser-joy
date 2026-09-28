@@ -82,6 +82,9 @@ runs:
         path: '${{ runner.workspace }}/packages'
         key: ${{ steps.restore-nugetcache.outputs.cache-primary-key }}
 
+    - uses: KamaranL/add-signtool-action@v1
+      id: signtool
+
 outputs:
   dep_hash:
     value: ${{ steps.dep_hash.outputs.hash }}
