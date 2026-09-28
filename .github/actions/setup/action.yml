@@ -58,7 +58,7 @@ runs:
       uses: NuGet/setup-nuget@v1
     
     - name: Restore NuGet packages 
-      run: nuget restore '${{ runner.workspace }}/packages.config' -PackagesDirectory '${{ runner.workspace }}/packages/'
+      run: nuget restore '${{ runner.workspace }}/lesser-joy/packages.config' -PackagesDirectory '${{ runner.workspace }}/packages/'
       shell: bash
 
     - run: cp '${{ runner.workspace }}/packages/Microsoft.Windows.WDK.x64.10.0.26100.4204/c/Include/10.0.26100.0/km/hidport.h' '${{ runner.workspace }}/packages/Microsoft.Windows.WDK.x64.10.0.26100.4204/c/Include/10.0.26100.0/um/'
