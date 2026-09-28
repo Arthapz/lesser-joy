@@ -61,7 +61,7 @@ runs:
       run: nuget restore '${{ runner.workspace }}/packages.config' -PackagesDirectory '${{ runner.workspace }}/packages/'
       shell: bash
 
-    - run: cp '${{ runnder.workspace }}/packages/Microsoft.Windows.WDK.x64.10.0.26100.4204/c/Include/10.0.26100.0/km/hidport.h' '${{ runnder.workspace }}/packages/Microsoft.Windows.WDK.x64.10.0.26100.4204/c/Include/10.0.26100.0/um/'
+    - run: cp '${{ runner.workspace }}/packages/Microsoft.Windows.WDK.x64.10.0.26100.4204/c/Include/10.0.26100.0/km/hidport.h' '${{ runner.workspace }}/packages/Microsoft.Windows.WDK.x64.10.0.26100.4204/c/Include/10.0.26100.0/um/'
       shell: bash
 
 outputs:
