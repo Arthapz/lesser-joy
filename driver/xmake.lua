@@ -24,7 +24,7 @@ rule("generate_cert", function()
                 path.translate("scripts/gen_certificate.ps1"),
             }
 
-            if option.get("on_ci") then
+            if get_config("on_ci") then
                 if option.get("diagnosis") then
                     print("running " .. pwsh.program .. " " .. table.concat(pwsh_args, " "))
                 end
