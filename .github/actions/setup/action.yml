@@ -56,7 +56,6 @@ runs:
 
     - name: Setup NuGet 
       uses: NuGet/setup-nuget@v1
-      shell: bash
     
     - name: Restore NuGet packages 
       run: nuget restore .\packages.config -PackagesDirectory .\packages\
