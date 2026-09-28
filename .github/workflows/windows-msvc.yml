@@ -1,4 +1,4 @@
-name: Windows MSVC
+name: 'Windows MSVC'
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.arch }}
+    name: '${{ matrix.arch }}'
 
     strategy:
       fail-fast: false

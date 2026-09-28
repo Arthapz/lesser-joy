@@ -24,12 +24,21 @@ rule("generate_cert", function()
                 path.translate("scripts/gen_certificate.ps1"),
             }
 
-            if option.get("diagnosis") then
-                print("running sudo " .. pwsh.program .. " " .. table.concat(pwsh_args, " "))
-            end
+            if option.get("on_ci") then
+                if option.get("diagnosis") then
+                    print("running " .. pwsh.program .. " " .. table.concat(pwsh_args, " "))
+                end
 
-            print("Generating certificate ---------")
-            sudo.execv(pwsh.program, pwsh_args)
+                print("Generating certificate ---------")
+                os.execv(pwsh.program, pwsh_args)
+            else
+                if option.get("diagnosis") then
+                    print("running sudo " .. pwsh.program .. " " .. table.concat(pwsh_args, " "))
+                end
+
+                print("Generating certificate ---------")
+                sudo.execv(pwsh.program, pwsh_args)
+            end
 
             cache:set("have_cert", true)
             cache:save()

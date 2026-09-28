@@ -1,4 +1,4 @@
-name: Windows LLVM
+name: 'Windows LLVM'
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.arch }} (${{ matrix.cpplib }})
+    name: '${{ matrix.arch }} (${{ matrix.cpplib }})'
 
     strategy:
       fail-fast: false

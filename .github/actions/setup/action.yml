@@ -54,15 +54,33 @@ runs:
       run: echo "hash=$(xmake l utils.ci.packageskey)" >> $GITHUB_OUTPUT
       shell: bash
 
-    - name: Setup NuGet 
+    - name: Restore cached NuGet packages
+      id: restore-nugetcache
+      if: ${{ inputs.os == 'windows' }}
+      uses: actions/cache/restore@v6
+      with:
+        path: '${{ runner.workspace }}/packages'
+        key: ${{ inputs.os }}-{{ inputs.arch }}
+
+    - name: Setup NuGet
+      if: ${{ inputs.os == 'windows' && !steps.restore-nugetcache.outputs.cache-hit }}
       uses: NuGet/setup-nuget@v1
     
     - name: Restore NuGet packages 
+      if: ${{ inputs.os == 'windows' && !steps.restore-nugetcache.outputs.cache-hit }}
       run: nuget restore '${{ runner.workspace }}/lesser-joy/packages.config' -PackagesDirectory '${{ runner.workspace }}/packages/'
       shell: bash
 
     - run: cp '${{ runner.workspace }}/packages/Microsoft.Windows.WDK.x64.10.0.26100.4204/c/Include/10.0.26100.0/km/hidport.h' '${{ runner.workspace }}/packages/Microsoft.Windows.WDK.x64.10.0.26100.4204/c/Include/10.0.26100.0/um/'
+      if: ${{ inputs.os == 'windows' && !steps.restore-nugetcache.outputs.cache-hit }}
       shell: bash
+
+    - name: Cache NuGet packages
+      if: ${{ inputs.os == 'windows' && !steps.restore-nugetcache.outputs.cache-hit }}
+      uses: actions/cache/save@v6
+      with:
+        path: '${{ runner.workspace }}/packages'
+        key: ${{ steps.restore-nugetcache.outputs.cache-primary-key }}
 
 outputs:
   dep_hash:
