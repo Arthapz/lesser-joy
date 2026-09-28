@@ -58,7 +58,7 @@ runs:
       uses: NuGet/setup-nuget@v1
     
     - name: Restore NuGet packages 
-      run: nuget restore .\packages.config -PackagesDirectory .\packages\
+      run: nuget restore ./packages.config -PackagesDirectory ./packages/
       shell: bash
 
 outputs:
