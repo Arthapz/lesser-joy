@@ -60,7 +60,7 @@ runs:
       uses: actions/cache/restore@v6
       with:
         path: '${{ runner.workspace }}/packages'
-        key: ${{ inputs.os }}-{{ inputs.arch }}
+        key: ${{ inputs.os }}-${{ inputs.arch }}
 
     - name: Setup NuGet
       if: ${{ inputs.os == 'windows' && !steps.restore-nugetcache.outputs.cache-hit }}
