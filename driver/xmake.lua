@@ -62,7 +62,7 @@ target("lesserjoy-driver", function()
     add_files("src/**.cpp", "src/**.cppm")
     set_policy("build.c++.modules", true)
 
-    set_runtimes("c++_static")
+    -- set_runtimes("c++_static")
 
     if is_mode("debug") then
         set_symbols("hidden", "debug")

@@ -338,7 +338,12 @@ namespace lj::hid {
         ENSURES(stdr::size(payload) == COMMAND_PAYLOAD_LENGTH);
 
         auto command = array<byte, COMMAND_LENGTH> {};
+#ifdef STORMKIT_COMPILER_MSSTL
+        stdr::copy(COMMAND_HEADER, stdr::begin(command));
+        stdr::copy(payload, stdr::begin(command) + stdr::size(COMMAND_HEADER));
+#else
         stdr::copy(stdv::concat(COMMAND_HEADER, payload), stdr::begin(command));
+#endif
         return command;
     }
 
