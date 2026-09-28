@@ -54,6 +54,12 @@ runs:
       run: echo "hash=$(xmake l utils.ci.packageskey)" >> $GITHUB_OUTPUT
       shell: bash
 
+    - name: Setup NuGet 
+      uses: NuGet/setup-nuget@v1 
+    
+    - name: Restore NuGet packages 
+      run: nuget restore .\packages.config -PackagesDirectory .\packages\
+
 outputs:
   dep_hash:
     value: ${{ steps.dep_hash.outputs.hash }}
