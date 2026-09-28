@@ -86,8 +86,8 @@ runs:
       id: signtool
 
     - run: |
-         echo "steps.signtool.outputs.signtool-${{ inputs.arch }}"
-         echo "steps.signtool.outputs.signtool-${{ inputs.arch }}" >> GITHUB_PATH
+         echo "${{ steps.signtool.outputs.signtool-x64 }}"
+         echo "${{ steps.signtool.outputs.signtool-x64 }}" >> GITHUB_PATH
       shell: bash
 
 outputs:
