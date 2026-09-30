@@ -102,11 +102,11 @@ runs:
       uses: tecolicom/actions-use-homebrew-tools@v1
       with:
         tools: llvm ninja meson cmake mold nasm pkgconf
-        key: ${{ matrix.os }}-homebrew-${{ matrix.arch }}
+        key: ${{ inputs.os }}-homebrew-${{ inputs.arch }}
         verbose: false
 
     - name: Set up Visual Studio shell
-      if: ${{ inputs.os == 'windows' }}
+      # if: ${{ inputs.os == 'windows' }}
       uses: egor-tensin/vs-shell@v2
       with:
         arch: ${{ inputs.arch }}
