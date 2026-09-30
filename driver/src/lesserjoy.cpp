@@ -24,7 +24,7 @@ auto logger = heap_ptr<lj::kernel_logger> {};
 extern "C" __declspec(dllexport) auto APIENTRY DllMain(HMODULE module, DWORD, LPVOID) -> BOOL {
     if (not logger) logger = log::logger::allocate_logger_instance<lj::kernel_logger>();
 #ifdef STORMKIT_DEBUG_MODE
-    logger->set_severity_mask(logger->severity_mask() | log::Severity::DEBUG);
+    logger->set_severity_mask(logger->severity_mask() | log::severity::DEBUG);
 #endif
 
     DisableThreadLibraryCalls(module);

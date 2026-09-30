@@ -24,14 +24,16 @@ rule("generate_cert", function()
                 path.translate("scripts/gen_certificate.ps1"),
             }
 
-            if option.get("diagnosis") then
-                print("running sudo " .. pwsh.program .. " " .. table.concat(pwsh_args, " "))
+            if get_config("devmode") then
+                if option.get("diagnosis") then
+                    print("running sudo " .. pwsh.program .. " " .. table.concat(pwsh_args, " "))
+                end
+
+                print("Generating certificate ---------")
+                sudo.execv(pwsh.program, pwsh_args)
+                cache:set("have_cert", true)
             end
 
-            print("Generating certificate ---------")
-            sudo.execv(pwsh.program, pwsh_args)
-
-            cache:set("have_cert", true)
             cache:save()
         end
     end)
@@ -60,8 +62,6 @@ target("lesserjoy-driver", function()
     add_files("src/**.cpp", "src/**.cppm")
     set_policy("build.c++.modules", true)
 
-    set_runtimes("c++_static")
-
     if is_mode("debug") then
         set_symbols("hidden", "debug")
     else
@@ -79,61 +79,68 @@ target("lesserjoy-driver", function()
 
     set_values("wdk.sdkdir", get_config("wdk"))
 
-    set_values("wdk.sign.mode", "test")
-    set_values("wdk.sign.store", "My")
-    set_values("wdk.sign.digest_algorithm", "SHA256")
-    set_values("wdk.sign.company", "lesserjoy")
-    set_values("wdk.sign.machine_store", true)
+    if get_config("devmode") then
+        set_values("wdk.sign.mode", "test")
+        set_values("wdk.sign.store", "My")
+        set_values("wdk.sign.digest_algorithm", "SHA256")
+        set_values("wdk.sign.company", "lesserjoy")
+        set_values("wdk.sign.machine_store", true)
+    end
 
     add_cxxflags("-fexperimental-library")
     add_ldflags("-fexperimental-library")
-    on_run(function(target)
-        import("lib.detect.find_tool")
-        import("core.base.option")
-        import("core.project.config")
-        import("core.project.project")
-        import("core.base.task")
-        import("privilege.sudo")
 
-        local wdk = target:data("wdk")
+    if get_config("devmode") then
+        on_run(function(target)
+            import("lib.detect.find_tool")
+            import("core.base.option")
+            import("core.project.config")
+            import("core.project.project")
+            import("core.base.task")
+            import("privilege.sudo")
 
-        local buildenvs = target:compiler("cxx"):runenvs()
+            local wdk = target:data("wdk")
 
-        local pnputil = find_tool("pnputil", {
-            check = function(tool) return os.isfile(tool) and os.isexec(tool) end,
-        })
-        assert(pnputil, "pnputil not found!")
+            local buildenvs = target:compiler("cxx"):runenvs()
 
-        print("Removing old driver ---------")
-        local out, err = os.iorunv(pnputil.program, { "/e" })
-        assert(err, err)
-        if out then
-            for _, driver in ipairs(out:split("\n\n")) do
-                if driver:find("TapzCrew") then
-                    local inf_file = driver:match("Nom publié :            (.-)\n")
-                    print("Found", inf_file)
-                    local pnputil_remove_args = {
-                        "/delete-driver",
-                        inf_file,
-                        "/uninstall",
-                    }
-                    if option.get("verbose") then
-                        print("running", "sudo " .. pnputil.program, table.concat(pnputil_remove_args, " "))
+            local pnputil = find_tool("pnputil", {
+                check = function(tool) return os.isfile(tool) and os.isexec(tool) end,
+            })
+            assert(pnputil, "pnputil not found!")
+
+            print("Removing old driver ---------")
+            local out, err = os.iorunv(pnputil.program, { "/e" })
+            assert(err, err)
+            if out then
+                for _, driver in ipairs(out:split("\n\n")) do
+                    if driver:find("TapzCrew") then
+                        local inf_file = driver:match("Nom publié :            (.-)\n")
+                        print("Found", inf_file)
+                        local pnputil_remove_args = {
+                            "/delete-driver",
+                            inf_file,
+                            "/uninstall",
+                        }
+                        if option.get("verbose") then
+                            print("running", "sudo " .. pnputil.program, table.concat(pnputil_remove_args, " "))
+                        end
+                        try({ function() sudo.execv(pnputil.program, pnputil_remove_args) end })
+                        catch({ function(...) end })
                     end
-                    try({ function() sudo.execv(pnputil.program, pnputil_remove_args) end })
-                    catch({ function(...) end })
                 end
             end
-        end
-        local inf_file = path.absolute(target:targetfile()):gsub("dll", "inf")
+            local inf_file = path.absolute(target:targetfile()):gsub("dll", "inf")
 
-        local pnputil_args = {
-            "/add-driver",
-            inf_file,
-            "/install",
-        }
-        print("Installing driver ---------")
-        if option.get("verbose") then print("running", "sudo " .. pnputil.program, table.concat(pnputil_args, " ")) end
-        sudo.execv(pnputil.program, pnputil_args)
-    end)
+            local pnputil_args = {
+                "/add-driver",
+                inf_file,
+                "/install",
+            }
+            print("Installing driver ---------")
+            if option.get("verbose") then
+                print("running", "sudo " .. pnputil.program, table.concat(pnputil_args, " "))
+            end
+            sudo.execv(pnputil.program, pnputil_args)
+        end)
+    end
 end)

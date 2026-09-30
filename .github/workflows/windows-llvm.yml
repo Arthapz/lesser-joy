@@ -1,0 +1,76 @@
+name: 'Windows LLVM'
+
+on:
+  pull_request:
+    branches: [develop]
+    paths-ignore:
+      - .gitignore
+      - Windows-LLVM.yml
+      - LICENSE
+      - README.md
+
+  push:
+    branches: [develop]
+    paths-ignore:
+      - .gitignore
+      - Windows-LLVM.yml
+      - LICENSE
+      - README.md
+
+jobs:
+  build:
+    name: '${{ matrix.arch }} (${{ matrix.cpplib }})'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025]
+        arch: [x64]
+        cpplib: [libc++, msstl]
+
+    runs-on: ${{ matrix.os }}
+    if: ${{ !contains(github.event.head_commit.message, 'ci skip') }}
+
+    concurrency:
+      group: ${{ github.ref }}-${{ github.base_ref }}-${{ github.head_ref }}-${{ matrix.os }}-llvm-${{ matrix.arch }}-${{ matrix.cpplib }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Enable git long paths
+        run: git config --system core.longpaths true
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Bootstrap
+        id: bootstrap
+        uses: ./.github/actions/setup
+        with:
+          os: windows
+          arch: ${{ matrix.arch }}
+          compiler: llvm
+
+      - name: Build & Tests
+        id: build_and_tests
+        uses: ./.github/actions/build
+        with:
+          os: windows
+          arch: ${{ matrix.arch }}
+          compiler: llvm
+          cpplib: ${{ matrix.cpplib }}
+          mode: release
+          dep_hash: ${{ steps.bootstrap.outputs.dep_hash }}
+          cache_key: ${{ steps.bootstrap.outputs.cache_key }}
+          additional_flags: |
+            --plat=windows \
+            --sdk='${{ runner.workspace }}/llvm/llvm' \
+            --policies="platform.longpaths" \
+            --wdk='${{ runner.workspace }}/packages/Microsoft.Windows.WDK.x64.10.0.26100.4204/c/'
+
+      - name: Upload artifacts
+        id: upload
+        uses: ./.github/actions/upload
+        with:
+          name: Windows-${{ matrix.arch }}-LLVM-${{ matrix.cpplib }}

@@ -3,7 +3,7 @@ target("lesserjoy-cli", function()
     add_files("src/*.cpp")
     set_policy("build.c++.modules", true)
 
-    set_runtimes("c++_static")
+    -- set_runtimes("c++_static")
 
     add_rules(stormkit_rule_prefix .. "stormkit::application")
     set_values("stormkit.components", { "stormkit", "log" })
