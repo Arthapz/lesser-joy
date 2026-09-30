@@ -249,7 +249,9 @@ namespace lj {
     ////////////////////////////////////////
     _Use_decl_annotations_ auto event_device_entry(WDFDEVICE device, WDF_POWER_DEVICE_STATE) -> NTSTATUS {
         auto& ctx = *get_device_context(device);
-        usb::event_device_entry(ctx);
+        LoggedTryOr(usb::event_device_entry(ctx),
+                    monadic::map(monadic::unwrap(), monadic::as<NTSTATUS>()),
+                    "Device entry failed!");
 
         return STATUS_SUCCESS;
     }
@@ -258,7 +260,7 @@ namespace lj {
     ////////////////////////////////////////
     _Use_decl_annotations_ auto event_device_exit(WDFDEVICE device, WDF_POWER_DEVICE_STATE) -> NTSTATUS {
         auto& ctx = *get_device_context(device);
-        usb::event_device_exit(ctx);
+        LoggedTryOr(usb::event_device_exit(ctx), monadic::map(monadic::unwrap(), monadic::as<NTSTATUS>()), "Device exit failed!");
 
         return STATUS_SUCCESS;
     }

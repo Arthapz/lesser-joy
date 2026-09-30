@@ -107,10 +107,7 @@ namespace lj::usb {
         auto config = WDF_USB_CONTINUOUS_READER_CONFIG {};
 
         // prepare continuous USB reader
-        usb.continuous_reader.sync             = allocate_unsafe<continuous_reader::Sync>();
-        usb.continuous_reader.sync->stop_token = usb.continuous_reader.sync->stop_source.get_token();
-
-        usb.continuous_reader.pending_input_reports.reserve(100);
+        // usb.continuous_reader.mutex = allocate_unsafe<std::mutex>();
         WDF_USB_CONTINUOUS_READER_CONFIG_INIT(&config,
                                               event_usb_pipe_reader_complete,
                                               reinterpret_cast<WDFCONTEXT>(&usb),
@@ -167,8 +164,6 @@ namespace lj::usb {
         auto& usb = std::get<usb::context>(ctx.transport);
 
         // stop continueous reader
-        usb.continuous_reader.sync->stop_source.request_stop();
-
         auto io_target = WdfUsbTargetPipeGetIoTarget(usb.command.out_pipe);
         WdfIoTargetStop(io_target, WdfIoTargetCancelSentIo);
         dlog("USB continuous reader stopped (command)!");
@@ -306,7 +301,7 @@ namespace lj::usb {
     ////////////////////////////////////////
     _Use_decl_annotations_ auto event_usb_pipe_reader_complete(WDFUSBPIPE, WDFMEMORY memory, usize count, WDFCONTEXT data)
       -> void {
-        if (data == nullptr or count == 0) return;
+        if (data == nullptr or count == 0 or count != hid::INPUT_REPORT_SIZE) return;
 
         auto& usb = *reinterpret_cast<context*>(data);
         auto& ctx = usb.continuous_reader;
@@ -314,22 +309,77 @@ namespace lj::usb {
         auto report = hid::input_report_buffer {};
         CustomLoggedTryOr(get_wdf_memory(memory, report), monadic::discard(), dlog, "Failed to get USB data!");
 
-        dlog("Received input report {}", view_of(report).subspan(count));
+        using axis_type = u16;
 
-        ctx.last_input_report.write([&report_ = report, count](auto& report) mutable noexcept {
-            report = input_report { clock::now(), count, std::move(report_) };
+        static constexpr auto scale =
+          [](axis_type x, axis_type rmin, axis_type rmax, axis_type tmin, axis_type tmax) noexcept -> axis_type {
+            return (x - rmin) * (tmax - tmin) / (rmax - rmin) + tmin;
+        };
+
+        static constexpr auto scale_axises = [](context& usb, array_view<byte> bytes, bool print) noexcept {
+            static constexpr auto POW_12 = (2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2);
+
+            const auto x = init_by<axis_type>([bytes](auto& out) {
+                out = 0;
+                out |= as<u16>(bytes[0]);
+                out |= (as<u16>(bytes[1] & 0xF_b) << 8);
+            });
+
+            //    [bytes] {
+            // auto out = std::array<byte, 2> {};
+            // out[0]   = bytes[0] & 0xFF_b;
+            // out[1]   = bytes[1] & 0xF_b;
+
+            //    return std::bit_cast<axis_type>(out);
+            // }();
+
+            usb.min_x           = std::min(x, usb.min_x);
+            usb.max_x           = std::max(x, usb.max_x);
+            const auto x_scaled = scale(x, usb.min_x, usb.max_x, 0, 4095);
+            // const auto x_as_bytes = bytes_of(x_scaled);
+
+            // { [0] = 0b0110'1001, [1] = 0b1010'0101, [2] = 0b0110'1001 }
+            //
+            // x = 0b0000'0101'0110'1001
+            // x[0] = 0b0110'1001
+            // x[1] = 0b0000'0101
+
+            // y = 0b0000'0110'1001'1010
+            // y[0] = 0b1001'1010
+            // y[1] = 0b0000'0110
+
+            const auto y = init_by<axis_type>([bytes](auto& out) {
+                out = 0;
+                out |= as<u16>((bytes[1] & 0xF0_b) >> 4);
+                out |= (as<u16>(bytes[2]) << 4);
+            });
+
+            usb.min_y           = std::min(y, usb.min_y);
+            usb.max_y           = std::max(y, usb.max_y);
+            const auto y_scaled = scale(y, usb.min_y, usb.max_y, 0, 4095);
+
+            if (print) {
+                dlog("Scaling x from {} to {}", x, x_scaled);
+                dlog("Scaling y from {} to {}", y, y_scaled);
+            }
+
+            bytes[0] = as<byte>((x_scaled >> 0) & 0xFF);
+            bytes[1] = as<byte>(((x_scaled >> 8) & 0x0F) | ((y_scaled << 4) & 0xF0));
+            bytes[2] = as<byte>((y_scaled >> 4) & 0xFF);
+        };
+
+        const auto print = ((std::bit_cast<u8>(report[1]) % 40) == 0);
+
+        if (print) dlog("Received input report of size {} (should be {})\n     {}", count, hid::INPUT_REPORT_SIZE, report);
+
+        // auto _ = std::unique_lock { *ctx.mutex };
+        // dlog("WRITE");
+        ctx.last_input_report.write([&report, &usb, print](auto& out) mutable noexcept {
+            scale_axises(usb, mutable_view_of(report).subspan(0x6, 0x3), print);
+            scale_axises(usb, mutable_view_of(report).subspan(0x9, 0x3), print);
+
+            out = input_report { clock::now(), hid::INPUT_REPORT_SIZE, std::move(report) };
         });
-        // {
-        //     auto  lock          = std::unique_lock { ctx.sync->input_report_mutex };
-        //     auto& input_reports = ctx.pending_input_reports;
-        //     input_reports.emplace_back(clock::now(), count, std::move(report));
-
-        //    stdr::sort(input_reports, [](const auto& first, const auto& second) static noexcept {
-        //        return first.timestamp < second.timestamp;
-        //    });
-        // }
-
-        // ctx.sync->new_input_report_available.notify_all();
     }
 
     ////////////////////////////////////////

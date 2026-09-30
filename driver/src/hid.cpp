@@ -11,6 +11,8 @@ module lesserjoy.hid;
 
 import lesserjoy.wdf;
 
+using namespace stormkit::literals;
+
 namespace lj::hid::ioctl {
     ////////////////////////////////////////
     ////////////////////////////////////////
@@ -36,58 +38,19 @@ namespace lj::hid::ioctl {
     ////////////////////////////////////////
     ////////////////////////////////////////
     auto read_report(WDFREQUEST& request, usb::context& usb) -> system_result<void> {
-        TryTo(data, get_wdf_request_memory(request));
         auto& ctx = usb.continuous_reader;
+
+        // if (ctx.mutex) {
+        //     auto _ = std::unique_lock { *ctx.mutex };
+        //     auto& report = ctx.last_input_report;
+        //     return fill_wdf_request_memory(request, array_view { stdr::data(report.buffer), report.size });
+        // }
 
         return ctx.last_input_report.read([&request](const auto& report) noexcept {
             return fill_wdf_request_memory(request, array_view { stdr::data(report.buffer), report.size });
         });
 
-        // while (not ctx.sync->stop_token.stop_requested()) {
-        //     auto lock = std::unique_lock { ctx.sync->input_report_mutex };
-
-        //    auto       found        = false;
-        //    const auto remove_range = stdr::remove_if(ctx.pending_input_reports,
-        //                                              [&ctx, &found](const auto& report) mutable noexcept {
-        //                                                  if (not found and &ctx.pending_input_reports.front() == &report) {
-        //                                                      found = true;
-        //                                                      return true;
-        //                                                  }
-        //                                                  return false;
-        //                                              });
-
-        //    if (found) {
-        //        auto  report_it = stdr::begin(remove_range);
-        //        auto& report    = *report_it;
-        //        Try(fill_wdf_request_memory(request, array_view { stdr::data(report.buffer), report.size }));
-        //        ctx.pending_input_reports.erase(report_it, stdr::end(remove_range));
-        //        break;
-        //    }
-
-        //    dlog("Waiting for input report...");
-
-        //    ctx.sync->new_input_report_available.wait(lock);
-        // }
-
-        // const auto raw_report = ctx.reports.write([](auto& queue) static noexcept -> std::optional<Raw_input_report> {
-        //     if (stdr::empty(queue)) return std::nullopt;
-
-        //    auto data = std::move(queue.front());
-        //    queue.pop();
-        //    return { std::move(data) };
-        // });
-        // if (raw_report != std::nullopt)
-        //    ilog("{::#x}", array_view<const u8> { std::bit_cast<const u8*>(stdr::data(*raw_report)), stdr::size(*raw_report)
-        //    });
-
-        // auto buffer = Raw_input_report {};
-        // auto count  = Try(usb::receive_data_sync(ctx, buffer));
-        // ilog("hid {} byte(s):\n{}",
-        //      stdr::size(data),
-        //      array_view<const u8> { std::bit_cast<const u8*>(stdr::data(data)), stdr::size(data) });
-        // get last hid report
-
-        // return {};
+        return {};
     }
 
     ////////////////////////////////////////
@@ -101,7 +64,7 @@ namespace lj::hid::ioctl {
     ////////////////////////////////////////
     ////////////////////////////////////////
     auto get_string(WDFREQUEST& request, string_view product_string, string_view serial_string) -> system_result<void> {
-        auto raw_buffer  = PVOID { nullptr };
+        auto raw_buffer  = raw_ptr<void> { nullptr };
         auto buffer_size = 0_usize;
 
         auto string_id = 0_u32;
@@ -110,10 +73,10 @@ namespace lj::hid::ioctl {
                         dlog,
                         "WdfRequestRetrieveInputBuffer failed!");
 
-        string_id = *std::bit_cast<u32*>(raw_buffer) & 0xFFFF;
+        string_id = (*reinterpret_cast<u32*>(raw_buffer)) & 0xFFFF;
 
         const auto is_serial = (string_id == 16 or string_id == 3); // HID_STRING_ID_ISERIALNUMBER
-        ilog("AAAAAA {} {}", product_string, serial_string);
+        ilog("{} {}", product_string, serial_string);
 
         if (is_serial) {
             Try(fill_wdf_request_memory(request, bytes_of(serial_string)));
