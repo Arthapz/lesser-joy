@@ -35,8 +35,8 @@ runs:
         xmake f \
          --arch=${{ case(inputs.arch  == 'x64' && inputs.os == 'linux', 'x86_64', inputs.arch) }} \
          --mode=${{ inputs.mode }} \
+         --kind=static \
          --sanitizers=n \
-         --mold=y \
          --cli=n \
          --gui=n \
          --lto=n \
