@@ -57,12 +57,12 @@ namespace lj {
         attributes.ParentObject = parent;
 
         auto memory     = WDFMEMORY {};
-        auto buffer_ptr = PVOID { nullptr };
+        auto buffer_ptr = raw_ptr<void> { nullptr };
 
         CustomLoggedTry(lj::win_call(WdfMemoryCreate, &attributes, NonPagedPoolNx, DRIVER_POOL_TAG, size, &memory, &buffer_ptr),
                         dlog,
                         "WdfMemoryCreate failed!");
 
-        return { std::make_pair(memory, array_view<byte> { std::bit_cast<byte*>(buffer_ptr), size }) };
+        return { std::make_pair(memory, array_view<byte> { reinterpret_cast<byte*>(buffer_ptr), size }) };
     }
 } // namespace lj

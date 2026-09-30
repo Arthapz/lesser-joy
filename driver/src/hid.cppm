@@ -99,9 +99,9 @@ namespace lj::hid {
         TryTo(report, (get_command_report<Command>(ctx)));
 
         if (not Command::validate_report(report)) {
-            const auto got      = array_view<const u8> { std::bit_cast<const u8*>(stdr::data(report)),
+            const auto got      = array_view<const u8> { reinterpret_cast<const u8*>(stdr::data(report)),
                                                          stdr::size(Command::REPORT_HEADER) };
-            const auto expected = array_view<const u8> { std::bit_cast<const u8*>(stdr::data(Command::REPORT_HEADER)),
+            const auto expected = array_view<const u8> { reinterpret_cast<const u8*>(stdr::data(Command::REPORT_HEADER)),
                                                          stdr::size(Command::REPORT_HEADER) };
             dlog("Report header bytes mismatch! got: {::#x}, expected: {::#x}!", got, expected);
             return std::unexpected<system_error2::nt_code> { STATUS_UNSUCCESSFUL };
