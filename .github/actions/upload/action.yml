@@ -8,9 +8,9 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Installation
-      run: mkdir '${{ runner.workspace }}/output'; xmake package -o '${{ runner.workspace }}/output'
-      shell: bash
+    # - name: Installation
+    #   run: mkdir '${{ runner.workspace }}/output'; xmake package -o '${{ runner.workspace }}/output'
+    #   shell: bash
 
     - name: Upload artifacts
       id: upload
