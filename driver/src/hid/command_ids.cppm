@@ -370,9 +370,6 @@ namespace lj::hid {
              STORMKIT_FORCE_INLINE
     constexpr auto command<TRANSPORT_, ID_, SUB_ID_, DATA, FILL_PAYLOAD>::validate_report(array_view<const byte> report) noexcept
       -> bool {
-        return std::memcmp(std::bit_cast<void*>(stdr::data(report)),
-                           std::bit_cast<void*>(stdr::data(REPORT_HEADER)),
-                           stdr::size(REPORT_HEADER))
-               == 0;
+        return std::memcmp(stdr::data(report), stdr::data(REPORT_HEADER), stdr::size(REPORT_HEADER)) == 0;
     }
 } // namespace lj::hid
