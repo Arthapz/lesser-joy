@@ -67,7 +67,7 @@ namespace lj::usb {
         if (result.has_value()) {
             auto size          = 0_usize;
             auto memory_buffer = WdfMemoryGetBuffer(usb.product_string, &size);
-            ctx.product_string = wide_to_ascii({ std::bit_cast<const wchar_t*>(memory_buffer), (size / sizeof(wchar_t)) });
+            ctx.product_string = wide_to_ascii({ reinterpret_cast<const wchar_t*>(memory_buffer), (size / sizeof(wchar_t)) });
         } else
             lj::wlog("Failed to get product string from USB device!\n    error: {}", result.error());
 
@@ -113,7 +113,7 @@ namespace lj::usb {
         usb.continuous_reader.pending_input_reports.reserve(100);
         WDF_USB_CONTINUOUS_READER_CONFIG_INIT(&config,
                                               event_usb_pipe_reader_complete,
-                                              std::bit_cast<WDFCONTEXT>(&usb),
+                                              reinterpret_cast<WDFCONTEXT>(&usb),
                                               hid::INPUT_REPORT_SIZE);
         CustomLoggedTry(lj::win_call(WdfUsbTargetPipeConfigContinuousReader, usb.hid.in_pipe, &config),
                         dlog,
@@ -214,7 +214,7 @@ namespace lj::usb {
 
         dlog("request {}, {::#x} sent",
              static_cast<void*>(request),
-             array_view<const u8> { std::bit_cast<const u8*>(stdr::data(payload)), stdr::size(payload) });
+             array_view<const u8> { reinterpret_cast<const u8*>(stdr::data(payload)), stdr::size(payload) });
 
         return {};
     }
@@ -226,7 +226,7 @@ namespace lj::usb {
         WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
 
         auto memory_descriptor = WDF_MEMORY_DESCRIPTOR {};
-        WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&memory_descriptor, std::bit_cast<PVOID>(stdr::data(payload)), stdr::size(payload));
+        WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&memory_descriptor, std::bit_cast<void*>(stdr::data(payload)), stdr::size(payload));
 
         auto written = ulong { 0 };
         CustomLoggedTry(lj::win_call(WdfUsbTargetPipeWriteSynchronously,
@@ -238,7 +238,7 @@ namespace lj::usb {
                         dlog,
                         "WdfUsbTargetPipeWriteSynchronously failed!");
 
-        dlog("Sent {::#x}", array_view<const u8> { std::bit_cast<const u8*>(stdr::data(payload)), stdr::size(payload) });
+        dlog("Sent {::#x}", array_view<const u8> { reinterpret_cast<const u8*>(stdr::data(payload)), stdr::size(payload) });
 
         return {};
     }
@@ -252,19 +252,19 @@ namespace lj::usb {
         auto report = hid::command_report_buffer {};
 
         auto memory_descriptor = WDF_MEMORY_DESCRIPTOR {};
-        WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&memory_descriptor, std::bit_cast<PVOID>(stdr::data(report)), stdr::size(report));
+        WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&memory_descriptor, stdr::data(report), stdr::size(report));
 
         auto readed = ulong { 0 };
         CustomLoggedTry(lj::win_call(WdfUsbTargetPipeReadSynchronously,
-                                     usb.command.out_pipe,
+                                     usb.command.in_pipe,
                                      nullptr,
                                      nullptr,
                                      &memory_descriptor,
                                      &readed),
                         dlog,
-                        "WdfUsbTargetPipeReadSynchronously failed!");
+                        "WdfUsbTargetPipeReadSynchronously failed! {}");
 
-        dlog("Received {::#x}", array_view<const u8> { std::bit_cast<const u8*>(stdr::data(report)), stdr::size(report) });
+        dlog("Received {::#x}", array_view<const u8> { reinterpret_cast<const u8*>(stdr::data(report)), stdr::size(report) });
 
         return { std::move(report) };
     }
@@ -287,7 +287,7 @@ namespace lj::usb {
                                           as<u8>(index));
 
         auto memory_descriptor = WDF_MEMORY_DESCRIPTOR {};
-        WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&memory_descriptor, std::bit_cast<PVOID>(stdr::data(data)), stdr::size(data));
+        WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&memory_descriptor, std::bit_cast<void*>(stdr::data(data)), stdr::size(data));
 
         CustomLoggedTry(lj::win_call(WdfUsbTargetDeviceSendControlTransferSynchronously,
                                      ctx.device,
@@ -308,7 +308,7 @@ namespace lj::usb {
       -> void {
         if (data == nullptr or count == 0) return;
 
-        auto& usb = *std::bit_cast<context*>(data);
+        auto& usb = *reinterpret_cast<context*>(data);
         auto& ctx = usb.continuous_reader;
 
         auto report = hid::input_report_buffer {};
