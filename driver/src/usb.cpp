@@ -134,11 +134,6 @@ namespace lj::usb {
           // = BUTTON_STATE | ANALOG_STICKS;
           = as<hid::feature_select::feature_flag>(0x27_u8);
 
-        // start continuous USB reader
-        auto io_target = WdfUsbTargetPipeGetIoTarget(usb.hid.in_pipe);
-        LoggedTry(lj::win_call(WdfIoTargetStart, io_target), "Failed to start USB read pipe!");
-        dlog("USB continuous reader started !");
-
         // send init sequence
         LoggedTry((hid::send_command_validate<hid::init::initialize_usb_command<transport::USB>>(usb)),
                   "Failed to initialize USB link!");
@@ -156,6 +151,11 @@ namespace lj::usb {
 
         ilog("{} initialized! (USB)", ctx.product_string);
 
+        // start continuous USB reader
+        auto io_target = WdfUsbTargetPipeGetIoTarget(usb.hid.in_pipe);
+        LoggedTry(lj::win_call(WdfIoTargetStart, io_target), "Failed to start USB read pipe!");
+        dlog("USB continuous reader started !");
+
         return {};
     }
 
@@ -169,7 +169,7 @@ namespace lj::usb {
         // stop continueous reader
         usb.continuous_reader.sync->stop_source.request_stop();
 
-        auto io_target = WdfUsbTargetPipeGetIoTarget(usb.command.in_pipe);
+        auto io_target = WdfUsbTargetPipeGetIoTarget(usb.command.out_pipe);
         WdfIoTargetStop(io_target, WdfIoTargetCancelSentIo);
         dlog("USB continuous reader stopped (command)!");
 
