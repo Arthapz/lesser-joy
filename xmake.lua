@@ -62,7 +62,7 @@ if has_config("stormkit") then
 end
 
 local windows_runtime = "MT"
-if is_mode("debug") then windows_runtime = windows_runtime .. "d" end
+-- if is_mode("debug") then windows_runtime = windows_runtime .. "d" end
 
 set_runtimes({ windows_runtime, get_config("runtimes") })
 

@@ -64,8 +64,6 @@ target("lesserjoy-driver", function()
 
     if get_config("toolchain", "llvm") then add_ldflags("-fuse-ld=lld-link", { force = true }) end
 
-    -- set_runtimes("c++_static")
-
     if is_mode("debug") then
         set_symbols("hidden", "debug")
     else
