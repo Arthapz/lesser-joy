@@ -69,6 +69,8 @@ set_runtimes({ windows_runtime, get_config("runtimes") })
 if get_config("toolchain", "llvm") then
     add_ldflags("-fuse-ld=lld-link", { force = true })
     add_shflags("-fuse-ld=lld-link", { force = true })
+
+    if not has_config("runtimes") then set_policy("check.auto_ignore_flags", false) end
 end
 
 add_requires("frozen", { system = false, configs = { modules = true, std_import = true, cpp = "latest" } })
