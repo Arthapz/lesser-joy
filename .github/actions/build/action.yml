@@ -41,7 +41,6 @@ runs:
          --gui=n \
          --lto=n \
          --on_ci=y \
-         -vD \
          --yes \
          ${{ case(inputs.compiler == 'llvm', '--toolchain=llvm', '') }} \
          ${{ case(inputs.compiler == 'llvm' && inputs.cpplib == 'libc++', '--runtimes="c++_static"', '') }} \
