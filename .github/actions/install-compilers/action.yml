@@ -105,3 +105,8 @@ runs:
         key: ${{ matrix.os }}-homebrew-${{ matrix.arch }}
         verbose: false
 
+    - name: Set up Visual Studio shell
+      if: ${{ inputs.os == 'windows' }}
+      uses: egor-tensin/vs-shell@v2
+      with:
+        arch: ${{ inputs.arch }}
