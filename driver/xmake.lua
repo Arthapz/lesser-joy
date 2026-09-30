@@ -62,6 +62,8 @@ target("lesserjoy-driver", function()
     add_files("src/**.cpp", "src/**.cppm")
     set_policy("build.c++.modules", true)
 
+    if get_config("toolchain", "llvm") then add_ldflags("-fuse-ld=lld-link", { force = true }) end
+
     -- set_runtimes("c++_static")
 
     if is_mode("debug") then
