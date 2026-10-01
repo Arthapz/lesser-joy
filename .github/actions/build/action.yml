@@ -37,7 +37,6 @@ runs:
          --mode=${{ inputs.mode }} \
          --kind=static \
          --sanitizers=n \
-         -vD \
          --cli=n \
          --gui=n \
          --lto=n \
@@ -58,7 +57,7 @@ runs:
     - name: Build
       id: build
       run: |
-        xmake b -v
+        xmake b
       shell: bash
 
     - name: Run unit tests
