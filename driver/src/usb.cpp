@@ -330,7 +330,7 @@ namespace lj::usb {
             // rescale x value from uncalibrated output to [0, 4095]
             usb.min_x           = std::min(x, usb.min_x);
             usb.max_x           = std::max(x, usb.max_x);
-            const auto x_scaled = scale(x, usb.min_x, usb.max_x, 0, 4095);
+            const auto x_scaled = -1 * scale(x, usb.min_x, usb.max_x, 0, 4095);
 
             // extract x from upper part of second byte and third byte
             const auto y = init_by<axis_type>([bytes](auto& out) noexcept {
@@ -349,7 +349,7 @@ namespace lj::usb {
             bytes[2] = as<byte>((y_scaled >> 4) & 0xFF);
         };
 
-        ctx.last_input_report.write([&report, &usb, print](auto& out) mutable noexcept {
+        ctx.last_input_report.write([&report, &usb](auto& out) mutable noexcept {
             calibrate_joystick(usb, mutable_view_of(report).subspan(0x6, 0x3));
             calibrate_joystick(usb, mutable_view_of(report).subspan(0x9, 0x3));
 

@@ -37,6 +37,7 @@ runs:
          --mode=${{ inputs.mode }} \
          --kind=static \
          --sanitizers=n \
+         -v \
          --cli=n \
          --gui=n \
          --lto=n \
