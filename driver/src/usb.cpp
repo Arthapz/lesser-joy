@@ -18,6 +18,8 @@ import lesserjoy.constants;
 namespace stdv = std::views;
 
 namespace lj::usb {
+    using axis_type = u16;
+
     EVT_WDF_REQUEST_COMPLETION_ROUTINE    event_request_completion_routine;
     EVT_WDF_USB_READER_COMPLETION_ROUTINE event_usb_pipe_reader_complete;
 
@@ -299,6 +301,49 @@ namespace lj::usb {
 
     ////////////////////////////////////////
     ////////////////////////////////////////
+    template<bool invert>
+    auto calibrate_joystick(context& usb, array_view<byte> bytes) noexcept -> void {
+        static constexpr auto scale =
+          [](axis_type x, axis_type rmin, axis_type rmax, axis_type tmin, axis_type tmax) noexcept -> axis_type {
+            return (x - rmin) * (tmax - tmin) / (rmax - rmin) + tmin;
+        };
+
+        // axis data is 12 bit packed
+        // extract x from first byte and lower part of second byte
+        const auto x = init_by<axis_type>([bytes](auto& out) noexcept {
+            out = 0;
+            out |= as<u16>(bytes[0]);
+            out |= (as<u16>(bytes[1] & 0xF_b) << 8);
+        });
+
+        // rescale x value from uncalibrated output to [0, 4095]
+        usb.min_x           = std::min(x, usb.min_x);
+        usb.max_x           = std::max(x, usb.max_x);
+        const auto x_scaled = scale(x, usb.min_x, usb.max_x, 0, 4095);
+
+        // extract x from upper part of second byte and third byte
+        const auto y = init_by<axis_type>([bytes](auto& out) noexcept {
+            out = 0;
+            out |= as<u16>((bytes[1] & 0xF0_b) >> 4);
+            out |= (as<u16>(bytes[2]) << 4);
+        });
+
+        // rescale y value from uncalibrated output to [0, 4095]
+        usb.min_y           = std::min(y, usb.min_y);
+        usb.max_y           = std::max(y, usb.max_y);
+        const auto y_scaled = [&usb, &y] noexcept {
+            if constexpr (invert) return scale(y, usb.min_y, usb.max_y, 4095, 0);
+            else
+                return scale(y, usb.min_y, usb.max_y, 0, 4095);
+        }();
+
+        bytes[0] = as<byte>((x_scaled >> 0) & 0xFF);
+        bytes[1] = as<byte>(((x_scaled >> 8) & 0x0F) | ((y_scaled << 4) & 0xF0));
+        bytes[2] = as<byte>((y_scaled >> 4) & 0xFF);
+    }
+
+    ////////////////////////////////////////
+    ////////////////////////////////////////
     _Use_decl_annotations_ auto event_usb_pipe_reader_complete(WDFUSBPIPE, WDFMEMORY memory, usize count, WDFCONTEXT data)
       -> void {
         if (data == nullptr or count == 0 or count != hid::INPUT_REPORT_SIZE) return;
@@ -308,47 +353,6 @@ namespace lj::usb {
 
         auto report = hid::input_report_buffer {};
         CustomLoggedTryOr(get_wdf_memory(memory, report), monadic::discard(), dlog, "Failed to get USB data!");
-
-        using axis_type = u16;
-
-        static constexpr auto scale =
-          [](axis_type x, axis_type rmin, axis_type rmax, axis_type tmin, axis_type tmax) noexcept -> axis_type {
-            return (x - rmin) * (tmax - tmin) / (rmax - rmin) + tmin;
-        };
-
-        // 12 bit packed
-        static constexpr auto calibrate_joystick = []<bool invert>(context& usb, array_view<byte> bytes) noexcept {
-            static constexpr auto POW_12 = (2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2);
-
-            // extract x from first byte and lower part of second byte
-            const auto x = init_by<axis_type>([bytes](auto& out) noexcept {
-                out = 0;
-                out |= as<u16>(bytes[0]);
-                out |= (as<u16>(bytes[1] & 0xF_b) << 8);
-            });
-
-            // rescale x value from uncalibrated output to [0, 4095]
-            usb.min_x           = std::min(x, usb.min_x);
-            usb.max_x           = std::max(x, usb.max_x);
-            const auto x_scaled = scale(x, usb.min_x, usb.max_x, 0, 4095);
-
-            // extract x from upper part of second byte and third byte
-            const auto y = init_by<axis_type>([bytes](auto& out) noexcept {
-                out = 0;
-                out |= as<u16>((bytes[1] & 0xF0_b) >> 4);
-                out |= (as<u16>(bytes[2]) << 4);
-            });
-
-            // rescale y value from uncalibrated output to [0, 4095]
-            usb.min_y           = std::min(y, usb.min_y);
-            usb.max_y           = std::max(y, usb.max_y);
-            const auto y_scaled = invert ? -1 : 1 * scale(y, usb.min_y, usb.max_y, 0, 4095);
-
-            bytes[0] = as<byte>((x_scaled >> 0) & 0xFF);
-            bytes[1] = as<byte>(((x_scaled >> 8) & 0x0F) | ((y_scaled << 4) & 0xF0));
-            bytes[2] = as<byte>((y_scaled >> 4) & 0xFF);
-        };
-
         ctx.last_input_report.write([&report, &usb](auto& out) mutable noexcept {
             // left joystick
             // y axis of left joystick is inverted in uncalibrated data
