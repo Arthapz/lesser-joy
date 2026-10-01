@@ -317,7 +317,7 @@ namespace lj::usb {
         };
 
         // 12 bit packed
-        static constexpr auto calibrate_joystick = [](context& usb, array_view<byte> bytes) noexcept {
+        static constexpr auto calibrate_joystick = []<bool invert>(context& usb, array_view<byte> bytes) noexcept {
             static constexpr auto POW_12 = (2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2);
 
             // extract x from first byte and lower part of second byte
@@ -330,7 +330,7 @@ namespace lj::usb {
             // rescale x value from uncalibrated output to [0, 4095]
             usb.min_x           = std::min(x, usb.min_x);
             usb.max_x           = std::max(x, usb.max_x);
-            const auto x_scaled = -1 * scale(x, usb.min_x, usb.max_x, 0, 4095);
+            const auto x_scaled = scale(x, usb.min_x, usb.max_x, 0, 4095);
 
             // extract x from upper part of second byte and third byte
             const auto y = init_by<axis_type>([bytes](auto& out) noexcept {
@@ -342,7 +342,7 @@ namespace lj::usb {
             // rescale y value from uncalibrated output to [0, 4095]
             usb.min_y           = std::min(y, usb.min_y);
             usb.max_y           = std::max(y, usb.max_y);
-            const auto y_scaled = scale(y, usb.min_y, usb.max_y, 0, 4095);
+            const auto y_scaled = invert ? -1 : 1 * scale(y, usb.min_y, usb.max_y, 0, 4095);
 
             bytes[0] = as<byte>((x_scaled >> 0) & 0xFF);
             bytes[1] = as<byte>(((x_scaled >> 8) & 0x0F) | ((y_scaled << 4) & 0xF0));
@@ -350,8 +350,12 @@ namespace lj::usb {
         };
 
         ctx.last_input_report.write([&report, &usb](auto& out) mutable noexcept {
-            calibrate_joystick(usb, mutable_view_of(report).subspan(0x6, 0x3));
-            calibrate_joystick(usb, mutable_view_of(report).subspan(0x9, 0x3));
+            // left joystick
+            // y axis of left joystick is inverted in uncalibrated data
+            calibrate_joystick<true>(usb, mutable_view_of(report).subspan(0x6, 0x3));
+
+            // right joystick
+            calibrate_joystick<false>(usb, mutable_view_of(report).subspan(0x9, 0x3));
 
             out = input_report { clock::now(), hid::INPUT_REPORT_SIZE, std::move(report) };
         });
