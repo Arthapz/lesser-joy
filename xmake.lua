@@ -73,7 +73,7 @@ set_policy("check.auto_ignore_flags", true)
 
 add_requires("frozen", { system = false, configs = { modules = true, std_import = true, cpp = "latest" } })
 add_requires("unordered_dense", { system = false, configs = { modules = true, std_import = true } })
-add_requires("xmake::nontype_functional")
+add_requires("nontype_functional", { system = false })
 
 add_requires(stormkit_dep_name, {
     configs = {
