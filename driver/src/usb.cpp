@@ -316,67 +316,42 @@ namespace lj::usb {
             return (x - rmin) * (tmax - tmin) / (rmax - rmin) + tmin;
         };
 
-        static constexpr auto scale_axises = [](context& usb, array_view<byte> bytes, bool print) noexcept {
+        // 12 bit packed
+        static constexpr auto calibrate_joystick = [](context& usb, array_view<byte> bytes) noexcept {
             static constexpr auto POW_12 = (2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2);
 
-            const auto x = init_by<axis_type>([bytes](auto& out) {
+            // extract x from first byte and lower part of second byte
+            const auto x = init_by<axis_type>([bytes](auto& out) noexcept {
                 out = 0;
                 out |= as<u16>(bytes[0]);
                 out |= (as<u16>(bytes[1] & 0xF_b) << 8);
             });
 
-            //    [bytes] {
-            // auto out = std::array<byte, 2> {};
-            // out[0]   = bytes[0] & 0xFF_b;
-            // out[1]   = bytes[1] & 0xF_b;
-
-            //    return std::bit_cast<axis_type>(out);
-            // }();
-
+            // rescale x value from uncalibrated output to [0, 4095]
             usb.min_x           = std::min(x, usb.min_x);
             usb.max_x           = std::max(x, usb.max_x);
             const auto x_scaled = scale(x, usb.min_x, usb.max_x, 0, 4095);
-            // const auto x_as_bytes = bytes_of(x_scaled);
 
-            // { [0] = 0b0110'1001, [1] = 0b1010'0101, [2] = 0b0110'1001 }
-            //
-            // x = 0b0000'0101'0110'1001
-            // x[0] = 0b0110'1001
-            // x[1] = 0b0000'0101
-
-            // y = 0b0000'0110'1001'1010
-            // y[0] = 0b1001'1010
-            // y[1] = 0b0000'0110
-
-            const auto y = init_by<axis_type>([bytes](auto& out) {
+            // extract x from upper part of second byte and third byte
+            const auto y = init_by<axis_type>([bytes](auto& out) noexcept {
                 out = 0;
                 out |= as<u16>((bytes[1] & 0xF0_b) >> 4);
                 out |= (as<u16>(bytes[2]) << 4);
             });
 
+            // rescale y value from uncalibrated output to [0, 4095]
             usb.min_y           = std::min(y, usb.min_y);
             usb.max_y           = std::max(y, usb.max_y);
             const auto y_scaled = scale(y, usb.min_y, usb.max_y, 0, 4095);
-
-            if (print) {
-                dlog("Scaling x from {} to {}", x, x_scaled);
-                dlog("Scaling y from {} to {}", y, y_scaled);
-            }
 
             bytes[0] = as<byte>((x_scaled >> 0) & 0xFF);
             bytes[1] = as<byte>(((x_scaled >> 8) & 0x0F) | ((y_scaled << 4) & 0xF0));
             bytes[2] = as<byte>((y_scaled >> 4) & 0xFF);
         };
 
-        const auto print = ((std::bit_cast<u8>(report[1]) % 40) == 0);
-
-        if (print) dlog("Received input report of size {} (should be {})\n     {}", count, hid::INPUT_REPORT_SIZE, report);
-
-        // auto _ = std::unique_lock { *ctx.mutex };
-        // dlog("WRITE");
         ctx.last_input_report.write([&report, &usb, print](auto& out) mutable noexcept {
-            scale_axises(usb, mutable_view_of(report).subspan(0x6, 0x3), print);
-            scale_axises(usb, mutable_view_of(report).subspan(0x9, 0x3), print);
+            calibrate_joystick(usb, mutable_view_of(report).subspan(0x6, 0x3));
+            calibrate_joystick(usb, mutable_view_of(report).subspan(0x9, 0x3));
 
             out = input_report { clock::now(), hid::INPUT_REPORT_SIZE, std::move(report) };
         });
