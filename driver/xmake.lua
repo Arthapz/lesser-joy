@@ -1,4 +1,4 @@
-if is_mode("debug") or is_mode("reldbg") then add_cxflags("clang::-ggdb3") end
+-- if is_mode("debug") or is_mode("reldbg") then add_cxflags("clang::-ggdb3") end
 
 option("wdk", { default = "C:/Program Files (x86)/Windows kits/10" })
 
@@ -87,8 +87,10 @@ target("lesserjoy-driver", function()
         set_values("wdk.sign.machine_store", true)
     end
 
-    add_cxxflags("-fexperimental-library")
-    add_ldflags("-fexperimental-library")
+    if has_config("runtimes") and get_config("runtimes"):startswith("c++") then
+        add_cxxflags("-fexperimental-library")
+        add_ldflags("-fexperimental-library")
+    end
 
     if get_config("devmode") then
         on_run(function(target)

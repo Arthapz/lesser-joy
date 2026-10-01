@@ -24,9 +24,10 @@ export namespace lj {
             DRIVER_XINPUTHID     = 2,
         };
 
-        using command_report_buffer = array<byte, INPUT_REPORT_SIZE>;
-        using input_report_buffer   = array<byte, INPUT_REPORT_SIZE>;
-        using output_report_buffer  = array<byte, OUTPUT_REPORT_SIZE>;
+        using command_report_buffer      = array<byte, INPUT_REPORT_SIZE>;
+        using input_report_buffer        = array<byte, INPUT_REPORT_SIZE>;
+        using input_report_buffer_scaled = array<byte, INPUT_REPORT_SIZE_SCALED>;
+        using output_report_buffer       = array<byte, OUTPUT_REPORT_SIZE>;
 
         using Report_descriptor = array_view<const byte>;
 
@@ -44,25 +45,13 @@ export namespace lj {
         struct input_report {
             clock::time_point timestamp;
 
-            usize                    size;
-            hid::input_report_buffer buffer;
+            usize                           size;
+            hid::input_report_buffer_scaled buffer;
         };
 
         struct continuous_reader {
-            bool started = false;
-
-            struct Sync {
-                std::stop_source stop_source;
-                std::stop_token  stop_token;
-
-                std::mutex              input_report_mutex;
-                std::condition_variable new_input_report_available;
-            };
-
-            heap_ptr<Sync> sync;
-
-            std::vector<input_report> pending_input_reports = {};
-
+            // heap_ptr<std::mutex> mutex;
+            // input_report         last_input_report;
             locked<input_report> last_input_report;
         };
 
@@ -82,6 +71,11 @@ export namespace lj {
             USB_DEVICE_DESCRIPTOR descriptor = {};
 
             WDFMEMORY product_string = nullptr;
+
+            u16 min_x = 500;
+            u16 max_x = 3500;
+            u16 min_y = 500;
+            u16 max_y = 3500;
 
             continuous_reader continuous_reader = {};
         };
