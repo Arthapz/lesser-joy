@@ -2,26 +2,32 @@ module;
 
 #include "windows.hpp"
 
-#include "usb.hpp"
+#include "transport/usb.hpp"
 
 #include <Hidclass.h>
 
 #include <stormkit/core/try_expected.hpp>
 
-export module lesserjoy.device;
+export module lesserjoy:device;
 
 import std;
 
 import stormkit.core;
 
-import lesserjoy.constants;
-import lesserjoy.common;
+import :constants;
+import :common;
+import :transport.usb;
 
 using namespace stormkit;
 
 namespace stdr = std::ranges;
 
 export namespace lj {
+    // namespace transport {
+    //     class usb_context;
+    //     class ble_context;
+    // } // namespace transport
+
     class device_context {
       public:
         device_context(const device_context&)                    = delete;
@@ -38,13 +44,13 @@ export namespace lj {
             return device_;
         }
 
-        // inline auto is_usb() const noexcept -> bool { return is<usb::context>(transport_); }
-        inline auto is_usb() const noexcept -> bool { return std::holds_alternative<usb::context>(transport_); }
+        // inline auto is_usb() const noexcept -> bool { return is<transport::usb_context>(transport_); }
+        inline auto is_usb() const noexcept -> bool { return std::holds_alternative<transport::usb_context>(transport_); }
 
-        // inline auto usb_ctx() noexcept -> usb::context& { return as<usb::context>(transport_); }
+        // inline auto usb_ctx() noexcept -> transport::usb_context& { return as<transport::usb_context>(transport_); }
         template<typename Self>
-        inline auto usb_ctx(this Self& self) noexcept -> meta::forward_const_to<Self, usb::context>& {
-            return std::get<usb::context>(self.transport_);
+        inline auto usb_ctx(this Self& self) noexcept -> meta::forward_const_to<Self, transport::usb_context>& {
+            return std::get<transport::usb_context>(self.transport_);
         }
 
         // inline auto is_ble() const noexcept -> bool { return is<ble::context>(transport_); }
@@ -109,7 +115,7 @@ export namespace lj {
 
         hid::output_report output_report_ = {};
 
-        std::variant<std::monostate, usb::context, ble::context> transport_ = {};
+        std::variant<std::monostate, transport::usb_context, ble::context> transport_ = {};
     };
 
     using Pdevice_context = device_context*;

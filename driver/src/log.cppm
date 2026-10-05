@@ -2,7 +2,7 @@ module;
 
 #include "windows.hpp"
 
-export module lesserjoy.log;
+export module lesserjoy:log;
 
 import std;
 

@@ -4,13 +4,13 @@ module;
 
 #include <stormkit/core/try_expected.hpp>
 
-export module lesserjoy.wdf;
+export module lesserjoy:wdf;
 
 import std;
 import stormkit.core;
 
-import lesserjoy.constants;
-import lesserjoy.log;
+import :constants;
+import :log;
 
 using namespace stormkit;
 using namespace stormkit::literals;

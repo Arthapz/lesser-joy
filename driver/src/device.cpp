@@ -2,18 +2,18 @@ module;
 
 #include "windows.hpp"
 
-#include "usb.hpp"
+#include "transport/usb.hpp"
 
 #include <Hidclass.h>
 
 #include <stormkit/core/try_expected.hpp>
 
-module lesserjoy.device;
+module lesserjoy;
 
-import lesserjoy.wdf;
-import lesserjoy.log;
-import lesserjoy.hid;
-import lesserjoy.usb;
+import :wdf;
+import :log;
+import :hid;
+import :transport.usb;
 
 using namespace stormkit;
 using namespace stormkit::literals;
@@ -96,8 +96,9 @@ namespace lj {
 
         // initialize usb context
         lj::ilog("{} attached (USB), PID: {:#x}, VID: {:#x}", product_string_, vendor_id_, product_id_);
-        transport_ = usb::context {};
-        LoggedTry(usb::init_context(*this), "Device prepare hardware failed!");
+        // LoggedTryTo(result, transport::usb_context::create(*this), elog, "Device prepare hardware failed!");
+        TryTo(result, transport::usb_context::create(*this));
+        transport_ = std::move(result);
 
         return {};
     }
@@ -115,14 +116,14 @@ namespace lj {
     ////////////////////////////////////////
     ////////////////////////////////////////
     auto device_context::device_entry() noexcept -> system_result<void> {
-        LoggedTry(usb::event_device_entry(*this), "Device entry failed!");
+        if (is_usb()) { LoggedTry(usb_ctx().device_entry(), "Device entry failed!"); }
         return {};
     }
 
     ////////////////////////////////////////
     ////////////////////////////////////////
     auto device_context::device_exit() noexcept -> system_result<void> {
-        LoggedTry(usb::event_device_exit(*this), "Device exit failed!");
+        if (is_usb()) { LoggedTry(usb_ctx().device_exit(), "Device exit failed!"); }
         return {};
     }
 

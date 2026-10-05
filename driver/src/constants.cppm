@@ -4,7 +4,7 @@ module;
 
 #include <hidport.h>
 
-export module lesserjoy.constants;
+export module lesserjoy:constants;
 
 import std;
 import frozen;
@@ -29,7 +29,7 @@ export namespace lj {
         DEVICE_TO_HOST = 0x01,
     };
 
-    enum class transport : u8 {
+    enum class transport_type : u8 {
         USB       = 0x00,
         BLUETOOTH = 0x01,
     };

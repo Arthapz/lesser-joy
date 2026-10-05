@@ -7,28 +7,28 @@ module;
 #include <stormkit/core/contract_macro.hpp>
 #include <stormkit/core/try_expected.hpp>
 
-export module lesserjoy.hid;
+export module lesserjoy:hid;
 
 import std;
 import frozen;
 
 import stormkit.core;
 
-export import :command_ids;
-export import :init_commands;
-export import :unknown_0x07_commands;
-export import :leds_commands;
-export import :feature_select_commands;
-export import :unknown_0x11_commands;
-export import :bluetooth_pairing_commands;
-export import :unknown_0x16_commands;
-export import :unknown_0x18_commands;
+export import :hid.command_ids;
+export import :hid.init_commands;
+export import :hid.unknown_0x07_commands;
+export import :hid.leds_commands;
+export import :hid.feature_select_commands;
+export import :hid.unknown_0x11_commands;
+export import :hid.bluetooth_pairing_commands;
+export import :hid.unknown_0x16_commands;
+export import :hid.unknown_0x18_commands;
 
-import lesserjoy.log;
-import lesserjoy.constants;
-import lesserjoy.common;
-import lesserjoy.wdf;
-import lesserjoy.usb;
+import :log;
+import :constants;
+import :common;
+import :wdf;
+import :transport.usb;
 
 using namespace stormkit;
 using namespace stormkit::literals;
@@ -37,30 +37,24 @@ namespace stdr = std::ranges;
 namespace stdv = std::views;
 
 export namespace lj::hid {
-    // template<typename Command, typename... Args>
-    // auto send_command(const auto& ctx, Args&&... args) -> system_result<usize>;
-    // template<typename Command, Validate VALIDATE = Validate::NO>
-    // auto receive_command(auto& ctx) -> system_result<array<byte, Command::REPORT_LENGTH>>;
-    // template<typename Command, Validate VALIDATE = Validate::NO, typename... Args>
-    // auto send_command_receive_report(auto& ctx, Args&&... args) -> system_result<array<byte, Command::REPORT_LENGTH>>;
-
     template<typename Command, typename... Args>
-    auto send_command(const usb::context& ctx, Args&&... args) -> system_result<void>;
+    auto send_command(const transport::usb_context& ctx, Args&&... args) -> system_result<void>;
     template<typename Command, typename... Args>
-    auto send_command_validate(const usb::context& ctx, Args&&... args) -> system_result<array<byte, Command::REPORT_LENGTH>>;
+    auto send_command_validate(const transport::usb_context& ctx, Args&&... args)
+      -> system_result<array<byte, Command::REPORT_LENGTH>>;
 
     template<typename Command>
-    auto get_command_report(const usb::context& ctx) -> system_result<array<byte, Command::REPORT_LENGTH>>;
+    auto get_command_report(const transport::usb_context& ctx) -> system_result<array<byte, Command::REPORT_LENGTH>>;
 
     namespace ioctl {
-        auto get_device_descriptor(WDFREQUEST& request, const HID_DESCRIPTOR& descriptor) noexcept -> system_result<void>;
-        auto get_device_attributes(WDFREQUEST& request, const HID_DEVICE_ATTRIBUTES& attributes) noexcept -> system_result<void>;
-        auto get_report_descriptor(WDFREQUEST& request, const report_descriptor& descriptor) noexcept -> system_result<void>;
+        auto get_device_descriptor(WDFREQUEST request, const HID_DESCRIPTOR& descriptor) noexcept -> system_result<void>;
+        auto get_device_attributes(WDFREQUEST request, const HID_DEVICE_ATTRIBUTES& attributes) noexcept -> system_result<void>;
+        auto get_report_descriptor(WDFREQUEST request, const report_descriptor& descriptor) noexcept -> system_result<void>;
 
-        auto read_report(WDFREQUEST& request, const usb::context& ctx) -> system_result<void>;
-        auto write_report(WDFREQUEST& request, array_view<const byte> from) -> system_result<void>;
-        auto get_string(WDFREQUEST& request, string_view product_string, string_view serial_string) -> system_result<void>;
-        auto get_indexed_string(WDFREQUEST& request, string_view product_string) -> system_result<void>;
+        auto read_report(WDFREQUEST request, const transport::usb_context& ctx) -> system_result<void>;
+        auto write_report(WDFREQUEST request, array_view<const byte> from) -> system_result<void>;
+        auto get_string(WDFREQUEST request, string_view product_string, string_view serial_string) -> system_result<void>;
+        auto get_indexed_string(WDFREQUEST request, string_view product_string) -> system_result<void>;
     } // namespace ioctl
 } // namespace lj::hid
 
@@ -73,17 +67,17 @@ namespace lj::hid {
     ////////////////////////////////////////
     template<typename Command, typename... Args>
     STORMKIT_FORCE_INLINE
-    inline auto send_command(const usb::context& ctx, Args&&... args) -> system_result<void> {
-        Try(usb::send_data_sync(ctx, Command::make_command(std::forward<Args>(args)...)));
+    inline auto send_command(const transport::usb_context& ctx, Args&&... args) -> system_result<void> {
+        Try(ctx.send_data(Command::make_command(std::forward<Args>(args)...)));
         return {};
     }
 
     ////////////////////////////////////////
     ////////////////////////////////////////
     template<typename Command>
-    inline auto get_command_report(const usb::context& ctx) -> system_result<array<byte, Command::REPORT_LENGTH>> {
+    inline auto get_command_report(const transport::usb_context& ctx) -> system_result<array<byte, Command::REPORT_LENGTH>> {
         auto report = array<byte, Command::REPORT_LENGTH> {};
-        TryTo(report_, usb::get_data_sync(ctx));
+        TryTo(report_, ctx.get_data_sync());
 
         stdr::copy(array_view { stdr::data(report_), Command::REPORT_LENGTH }, stdr::begin(report));
 
@@ -94,7 +88,7 @@ namespace lj::hid {
     ////////////////////////////////////////
     template<typename Command, typename... Args>
     STORMKIT_FORCE_INLINE
-    inline auto send_command_validate(const usb::context& ctx, Args&&... args)
+    inline auto send_command_validate(const transport::usb_context& ctx, Args&&... args)
       -> system_result<array<byte, Command::REPORT_LENGTH>> {
         Try(send_command<Command>(ctx, std::forward<Args>(args)...));
         TryTo(report, (get_command_report<Command>(ctx)));

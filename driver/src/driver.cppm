@@ -2,13 +2,13 @@ module;
 
 #include "windows.hpp"
 
-export module lesserjoy.driver;
+export module lesserjoy:driver;
 
 import std;
 
 import stormkit.core;
 
-import lesserjoy.constants;
+import :constants;
 
 using namespace stormkit;
 
@@ -24,6 +24,4 @@ export namespace lj {
     using Pdriver_context = driver_context*;
     WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(driver_context, get_driver_context)
     STORMKIT_POP_WARNINGS
-
-    EVT_WDF_OBJECT_CONTEXT_CLEANUP event_driver_cleanup;
 } // namespace lj

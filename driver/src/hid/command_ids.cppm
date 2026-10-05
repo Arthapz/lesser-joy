@@ -3,13 +3,13 @@ module;
 #include <stormkit/core/contract_macro.hpp>
 #include <stormkit/core/platform_macro.hpp>
 
-export module lesserjoy.hid:command_ids;
+export module lesserjoy:hid.command_ids;
 
 import std;
 
 import stormkit.core;
 
-import lesserjoy.constants;
+import :constants;
 
 using namespace stormkit;
 using namespace stormkit::literals;
@@ -250,7 +250,7 @@ export {
             u8 report_payload_length  = 0x00;
         };
 
-        template<transport                           TRANSPORT_,
+        template<transport_type                      TRANSPORT_,
                  command_id                          ID_,
                  typename subcommand_enum<ID_>::type SUB_ID_,
                  command_data                        DATA         = {},
@@ -260,7 +260,7 @@ export {
             static constexpr auto SUB_ID    = SUB_ID_;
             static constexpr auto TRANSPORT = TRANSPORT_;
 
-            static constexpr auto ACK                    = TRANSPORT == transport::USB ? 0xF8 : 0x78;
+            static constexpr auto ACK                    = TRANSPORT == transport_type::USB ? 0xF8 : 0x78;
             static constexpr auto COMMAND_PAYLOAD_LENGTH = DATA.command_payload_length;
             static constexpr auto REPORT_PAYLOAD_LENGTH  = DATA.report_payload_length;
 
@@ -310,7 +310,7 @@ export {
 namespace lj::hid {
     ////////////////////////////////////////
     ////////////////////////////////////////
-    template<transport                           TRANSPORT_,
+    template<transport_type                      TRANSPORT_,
              command_id                          ID_,
              typename subcommand_enum<ID_>::type SUB_ID_,
              command_data                        DATA,
@@ -326,7 +326,7 @@ namespace lj::hid {
 
     ////////////////////////////////////////
     ////////////////////////////////////////
-    template<transport                           TRANSPORT_,
+    template<transport_type                      TRANSPORT_,
              command_id                          ID_,
              typename subcommand_enum<ID_>::type SUB_ID_,
              command_data                        DATA,
@@ -349,7 +349,7 @@ namespace lj::hid {
 
     ////////////////////////////////////////
     ////////////////////////////////////////
-    template<transport                           TRANSPORT_,
+    template<transport_type                      TRANSPORT_,
              command_id                          ID_,
              typename subcommand_enum<ID_>::type SUB_ID_,
              command_data                        DATA,
@@ -362,7 +362,7 @@ namespace lj::hid {
 
     ////////////////////////////////////////
     ////////////////////////////////////////
-    template<transport                           TRANSPORT_,
+    template<transport_type                      TRANSPORT_,
              command_id                          ID_,
              typename subcommand_enum<ID_>::type SUB_ID_,
              command_data                        DATA,

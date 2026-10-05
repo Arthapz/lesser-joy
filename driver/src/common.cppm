@@ -2,15 +2,15 @@ module;
 
 #include "windows.hpp"
 
-#include "usb.hpp"
+#include "transport/usb.hpp"
 
-export module lesserjoy.common;
+export module lesserjoy:common;
 
 import std;
 
 import stormkit.core;
 
-import lesserjoy.constants;
+import :constants;
 
 using namespace stormkit;
 
