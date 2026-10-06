@@ -4,7 +4,7 @@ module;
 
 #include <stormkit/core/try_expected.hpp>
 
-module lesserjoy.wdf;
+module lesserjoy;
 
 namespace lj {
     ////////////////////////////////////////

@@ -1,7 +1,7 @@
 #ifndef LESSERJOY_USB_HPP
 #define LESSERJOY_USB_HPP
 
-#include "windows.hpp"
+#include "../windows.hpp"
 
 #include <hidport.h>
 #include <usb.h>
