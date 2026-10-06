@@ -18,8 +18,8 @@ using namespace stormkit::literals;
 namespace stdr = std::ranges;
 
 export namespace lj {
-    template<typename Func, typename... Args>
-    auto win_call(Func&& func, Args&&... args) noexcept -> system_result<void>;
+    template<typename Func, typename... Ts>
+    auto win_call(Func&& func, Ts&&... args) noexcept -> system_result<void>;
 
     auto wdf_memory_allocate(usize size, WDFOBJECT parent = WDF_NO_HANDLE) noexcept
       -> system_result<std::pair<WDFMEMORY, array_view<byte>>>;
@@ -39,11 +39,11 @@ export namespace lj {
 namespace lj {
     ////////////////////////////////////////
     ////////////////////////////////////////
-    template<typename Func, typename... Args>
-    inline auto win_call(Func&& func, Args&&... args) noexcept -> system_result<void> {
+    template<typename Func, typename... Ts>
+    inline auto win_call(Func&& func, Ts&&... args) noexcept -> system_result<void> {
         auto expected = system_result<void> {};
 
-        const auto status = std::forward<Func>(func)(std::forward<Args>(args)...);
+        const auto status = std::forward<Func>(func)(std::forward<Ts>(args)...);
         if (not NT_SUCCESS(status)) expected = std::unexpected { error_code::from_ntstatus(status) };
 
         return expected;

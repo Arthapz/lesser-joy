@@ -24,10 +24,9 @@ export namespace lj {
             DRIVER_XINPUTHID     = 2,
         };
 
-        using command_report_buffer      = array<byte, INPUT_REPORT_SIZE>;
-        using input_report_buffer        = array<byte, INPUT_REPORT_SIZE>;
-        using input_report_buffer_scaled = array<byte, INPUT_REPORT_SIZE_SCALED>;
-        using output_report_buffer       = array<byte, OUTPUT_REPORT_SIZE>;
+        using command_report_buffer = array<byte, INPUT_REPORT_SIZE>;
+        using input_report_buffer   = array<byte, INPUT_REPORT_SIZE>;
+        using output_report_buffer  = array<byte, OUTPUT_REPORT_SIZE>;
 
         using report_descriptor = array_view<const byte>;
 
@@ -45,13 +44,11 @@ export namespace lj {
         struct input_report {
             clock::time_point timestamp;
 
-            usize                           size;
-            hid::input_report_buffer_scaled buffer;
+            usize                    size;
+            hid::input_report_buffer buffer;
         };
 
         struct continuous_reader {
-            // heap_ptr<std::mutex> mutex;
-            // input_report         last_input_report;
             locked<input_report> last_input_report;
         };
 

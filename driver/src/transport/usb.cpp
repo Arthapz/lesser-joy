@@ -196,19 +196,26 @@ namespace lj::transport {
           = as<hid::feature_select::feature_flag>(0x27_u8);
 
         // Send init sequence
-        LoggedTry((hid::send_command_validate<hid::init::initialize_usb_command<transport_type::USB>>(*this)),
-                  "Failed to initialize USB link!");
-        LoggedTry((hid::send_command_validate<
-                    hid::feature_select::set_feature_mask_command<transport_type::USB>>(*this, ENABLED_FEATURES)),
-                  "Failed to set feature mask!");
-        LoggedTry((hid::send_command_validate<
-                    hid::feature_select::enable_features_command<transport_type::USB>>(*this, ENABLED_FEATURES)),
-                  "Failed to enable features!");
-        LoggedTry((hid::send_command_validate<hid::leds::set_player_1_command<transport_type::USB>>(*this)),
-                  "Failed to setup player LED!");
-        LoggedTry((hid::send_command_validate<
-                    hid::init::select_input_report_command<transport_type::USB>>(*this,
-                                                                                 hid::init::input_report_id::ALT_PROCON_2)),
+        // LoggedTry((hid::send_command_validate<hid::init::initialize_usb_command<transport_type::USB>>(*this)),
+        //           "Failed to initialize USB link!");
+        // LoggedTry((hid::send_command_validate<
+        //             hid::feature_select::set_feature_mask_command<transport_type::USB>>(*this, ENABLED_FEATURES)),
+        //           "Failed to set feature mask!");
+        // LoggedTry((hid::send_command_validate<
+        //             hid::feature_select::enable_features_command<transport_type::USB>>(*this, ENABLED_FEATURES)),
+        //           "Failed to enable features!");
+        // LoggedTry((hid::send_command_validate<hid::leds::set_player_1_command<transport_type::USB>>(*this)),
+        //           "Failed to setup player LED!");
+        // LoggedTry((hid::send_command_validate<
+        //             hid::init::select_input_report_command<transport_type::USB>>(*this,
+        //                                                                          hid::init::input_report_id::ALT_PROCON_2)),
+        //           "Failed to select input report!");
+
+        LoggedTry((send_command<hid::init::initialize_usb_command>()), "Failed to initialize USB link!");
+        LoggedTry((send_command<hid::feature_select::set_feature_mask_command>(ENABLED_FEATURES)), "Failed to set feature mask!");
+        LoggedTry((send_command<hid::feature_select::enable_features_command>(ENABLED_FEATURES)), "Failed to enable features!");
+        LoggedTry((send_command<hid::leds::set_player_1_command>()), "Failed to setup player LED!");
+        LoggedTry((send_command<hid::init::select_input_report_command>(hid::init::input_report_id::ALT_PROCON_2)),
                   "Failed to select input report!");
 
         ilog("{} initialized! (USB)", device_ctx_.get()->product_string());

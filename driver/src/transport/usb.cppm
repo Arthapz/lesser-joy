@@ -5,6 +5,7 @@ module;
 #include "usb.hpp"
 
 #include <stormkit/core/contract_macro.hpp>
+#include <stormkit/core/try_expected.hpp>
 
 export module lesserjoy:transport.usb;
 
@@ -26,6 +27,8 @@ export namespace lj {
     namespace transport {
         class usb_context {
           public:
+            static constexpr auto TYPE = transport_type::USB;
+
             struct joystick {
                 u16 min_x = 500;
                 u16 max_x = 3500;
@@ -53,6 +56,9 @@ export namespace lj {
             auto send_data_sync(array_view<const byte>) noexcept -> system_result<void>;
 
             auto get_data_sync() const noexcept -> system_result<hid::command_report_buffer>;
+
+            template<typename Command, bool VALIDATE = true, typename... Ts>
+            auto send_command(Ts&&... args) noexcept -> system_result<void>;
 
             auto send_control_request(byte, byte, byte = 0x00_b, array_view<const byte> = {}) noexcept -> system_result<void>;
 
@@ -165,5 +171,36 @@ namespace lj::transport {
         EXPECTS(id <= 1);
 
         return joysticks_[id];
+    }
+
+    ////////////////////////////////////////
+    ////////////////////////////////////////
+    template<typename Command, bool VALIDATE = true, typename... Ts>
+    auto usb_context::send_command(Ts&&... args) noexcept -> system_result<void> {
+        if constexpr (sizeof...(args) == 0) {
+            static constexpr auto COMMAND = Command::template make_command<TYPE>(std::forward<Ts>(args)...);
+            Try(send_data(COMMAND));
+        } else {
+            static const auto COMMAND = Command::template make_command<TYPE>(std::forward<Ts>(args)...);
+            Try(send_data(COMMAND));
+        }
+
+        if constexpr (VALIDATE) {
+            TryTo(report_, get_data_sync());
+            const auto report = array_view<const byte, Command::REPORT_LENGTH> { stdr::data(report_), Command::REPORT_LENGTH };
+
+            if (not Command::template validate_report<TYPE>(report)) {
+                const auto got      = array_view<const u8> { reinterpret_cast<const u8*>(stdr::data(report)),
+                                                             stdr::size(Command::template REPORT_HEADER<TYPE>) };
+                const auto expected = array_view<const u8> {
+                    reinterpret_cast<const u8*>(stdr::data(Command::template REPORT_HEADER<TYPE>)),
+                    stdr::size(Command::template REPORT_HEADER<TYPE>)
+                };
+                dlog("Report header bytes mismatch! got: {::#x}, expected: {::#x}!", got, expected);
+                return std::unexpected<system_error2::nt_code> { STATUS_UNSUCCESSFUL };
+            }
+        }
+
+        return {};
     }
 } // namespace lj::transport

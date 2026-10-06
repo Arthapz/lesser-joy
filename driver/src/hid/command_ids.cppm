@@ -250,20 +250,20 @@ export {
             u8 report_payload_length  = 0x00;
         };
 
-        template<transport_type                      TRANSPORT_,
-                 command_id                          ID_,
+        template<command_id                          ID_,
                  typename subcommand_enum<ID_>::type SUB_ID_,
                  command_data                        DATA         = {},
                  auto                                FILL_PAYLOAD = monadic::noop()>
         struct command {
-            static constexpr auto ID        = ID_;
-            static constexpr auto SUB_ID    = SUB_ID_;
-            static constexpr auto TRANSPORT = TRANSPORT_;
+            static constexpr auto ID     = ID_;
+            static constexpr auto SUB_ID = SUB_ID_;
 
+            template<transport_type TRANSPORT>
             static constexpr auto ACK                    = TRANSPORT == transport_type::USB ? 0xF8 : 0x78;
             static constexpr auto COMMAND_PAYLOAD_LENGTH = DATA.command_payload_length;
             static constexpr auto REPORT_PAYLOAD_LENGTH  = DATA.report_payload_length;
 
+            template<transport_type TRANSPORT>
             static constexpr auto COMMAND_HEADER = into<
               array>(as_bytes,
                      { as<u8>(ID),
@@ -274,6 +274,7 @@ export {
                        as<u8>(COMMAND_PAYLOAD_LENGTH),
                        0x00_u8,
                        0x00_u8 });
+            template<transport_type TRANSPORT>
             static constexpr auto REPORT_HEADER = into<
               array>(as_bytes,
                      { as<u8>(ID),
@@ -281,19 +282,22 @@ export {
                        as<u8>(TRANSPORT),
                        as<u8>(SUB_ID),
                        0x00_u8,
-                       as<u8>(ACK),
+                       as<u8>(ACK<TRANSPORT>),
                        0x00_u8,
                        0x00_u8 });
 
-            static constexpr auto COMMAND_LENGTH = stdr::size(COMMAND_HEADER) + COMMAND_PAYLOAD_LENGTH;
-            static constexpr auto REPORT_LENGTH  = stdr::size(REPORT_HEADER) + REPORT_PAYLOAD_LENGTH;
+            // USB and BLE have same size
+            static constexpr auto COMMAND_LENGTH = stdr::size(COMMAND_HEADER<transport_type::USB>) + COMMAND_PAYLOAD_LENGTH;
+            static constexpr auto REPORT_LENGTH  = stdr::size(REPORT_HEADER<transport_type::USB>) + REPORT_PAYLOAD_LENGTH;
 
-            template<typename... Args>
-            static constexpr auto make_payload(Args&&... args) noexcept -> array<byte, COMMAND_PAYLOAD_LENGTH>;
-            template<typename... Args>
-            static constexpr auto make_command(Args&&... args) noexcept -> array<byte, COMMAND_LENGTH>;
+            template<typename... Ts>
+            static constexpr auto make_payload(Ts&&... args) noexcept -> array<byte, COMMAND_PAYLOAD_LENGTH>;
+            template<transport_type TRANSPORT, typename... Ts>
+            static constexpr auto make_command(Ts&&... args) noexcept -> array<byte, COMMAND_LENGTH>;
+            template<transport_type TRANSPORT>
             static constexpr auto make_report() noexcept -> array<byte, REPORT_LENGTH>;
-            static constexpr auto validate_report(array_view<const byte> report) noexcept -> bool;
+            template<transport_type TRANSPORT>
+            static constexpr auto validate_report(array_view<const byte, REPORT_LENGTH> report) noexcept -> bool;
         };
     } // namespace lj::hid
 
@@ -310,66 +314,51 @@ export {
 namespace lj::hid {
     ////////////////////////////////////////
     ////////////////////////////////////////
-    template<transport_type                      TRANSPORT_,
-             command_id                          ID_,
-             typename subcommand_enum<ID_>::type SUB_ID_,
-             command_data                        DATA,
-             auto                                FILL_PAYLOAD>
-    template<typename... Args>
-             STORMKIT_FORCE_INLINE
-    constexpr auto command<TRANSPORT_, ID_, SUB_ID_, DATA, FILL_PAYLOAD>::make_payload(Args&&... args) noexcept
+    template<command_id ID_, typename subcommand_enum<ID_>::type SUB_ID_, command_data DATA, auto FILL_PAYLOAD>
+    template<typename... Ts>
+    STORMKIT_FORCE_INLINE
+    constexpr auto command<ID_, SUB_ID_, DATA, FILL_PAYLOAD>::make_payload(Ts&&... args) noexcept
       -> array<byte, COMMAND_PAYLOAD_LENGTH> {
         auto out = array<byte, COMMAND_PAYLOAD_LENGTH> {};
-        FILL_PAYLOAD(out, std::forward<Args>(args)...);
+        FILL_PAYLOAD(out, std::forward<Ts>(args)...);
         return out;
     }
 
     ////////////////////////////////////////
     ////////////////////////////////////////
-    template<transport_type                      TRANSPORT_,
-             command_id                          ID_,
-             typename subcommand_enum<ID_>::type SUB_ID_,
-             command_data                        DATA,
-             auto                                FILL_PAYLOAD>
-    template<typename... Args>
-    constexpr auto command<TRANSPORT_, ID_, SUB_ID_, DATA, FILL_PAYLOAD>::make_command(Args&&... args) noexcept
-      -> array<byte, COMMAND_LENGTH> {
-        const auto payload = make_payload(std::forward<Args>(args)...);
+    template<command_id ID_, typename subcommand_enum<ID_>::type SUB_ID_, command_data DATA, auto FILL_PAYLOAD>
+    template<transport_type TRANSPORT, typename... Ts>
+    constexpr auto command<ID_, SUB_ID_, DATA, FILL_PAYLOAD>::make_command(Ts&&... args) noexcept -> array<byte, COMMAND_LENGTH> {
+        const auto payload = make_payload(std::forward<Ts>(args)...);
         ENSURES(stdr::size(payload) == COMMAND_PAYLOAD_LENGTH);
 
         auto command = array<byte, COMMAND_LENGTH> {};
 #ifdef STORMKIT_COMPILER_MSSTL
-        stdr::copy(COMMAND_HEADER, stdr::begin(command));
-        stdr::copy(payload, stdr::begin(command) + stdr::size(COMMAND_HEADER));
+        stdr::copy(COMMAND_HEADER<TRANSPORT>, stdr::begin(command));
+        stdr::copy(payload, stdr::begin(command) + stdr::size(COMMAND_HEADER<TRANSPORT>));
 #else
-        stdr::copy(stdv::concat(COMMAND_HEADER, payload), stdr::begin(command));
+        stdr::copy(stdv::concat(COMMAND_HEADER<TRANSPORT>, payload), stdr::begin(command));
 #endif
         return command;
     }
 
     ////////////////////////////////////////
     ////////////////////////////////////////
-    template<transport_type                      TRANSPORT_,
-             command_id                          ID_,
-             typename subcommand_enum<ID_>::type SUB_ID_,
-             command_data                        DATA,
-             auto                                FILL_PAYLOAD>
-    constexpr auto command<TRANSPORT_, ID_, SUB_ID_, DATA, FILL_PAYLOAD>::make_report() noexcept -> array<byte, REPORT_LENGTH> {
+    template<command_id ID_, typename subcommand_enum<ID_>::type SUB_ID_, command_data DATA, auto FILL_PAYLOAD>
+    template<transport_type TRANSPORT>
+    constexpr auto command<ID_, SUB_ID_, DATA, FILL_PAYLOAD>::make_report() noexcept -> array<byte, REPORT_LENGTH> {
         auto report = array<byte, REPORT_LENGTH> {};
-        stdr::copy(REPORT_HEADER, stdr::begin(report));
+        stdr::copy(REPORT_HEADER<TRANSPORT>, stdr::begin(report));
         return report;
     }
 
     ////////////////////////////////////////
     ////////////////////////////////////////
-    template<transport_type                      TRANSPORT_,
-             command_id                          ID_,
-             typename subcommand_enum<ID_>::type SUB_ID_,
-             command_data                        DATA,
-             auto                                FILL_PAYLOAD>
-             STORMKIT_FORCE_INLINE
-    constexpr auto command<TRANSPORT_, ID_, SUB_ID_, DATA, FILL_PAYLOAD>::validate_report(array_view<const byte> report) noexcept
-      -> bool {
-        return std::memcmp(stdr::data(report), stdr::data(REPORT_HEADER), stdr::size(REPORT_HEADER)) == 0;
+    template<command_id ID_, typename subcommand_enum<ID_>::type SUB_ID_, command_data DATA, auto FILL_PAYLOAD>
+    template<transport_type TRANSPORT>
+    STORMKIT_FORCE_INLINE
+    constexpr auto command<ID_, SUB_ID_, DATA, FILL_PAYLOAD>::validate_report(array_view<const byte, REPORT_LENGTH>
+                                                                                report) noexcept -> bool {
+        return std::memcmp(stdr::data(report), stdr::data(REPORT_HEADER<TRANSPORT>), stdr::size(REPORT_HEADER<TRANSPORT>)) == 0;
     }
 } // namespace lj::hid
