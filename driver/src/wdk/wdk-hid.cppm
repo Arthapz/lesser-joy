@@ -253,4 +253,35 @@ export namespace wdk {
     inline constexpr auto IOCTL_SET_NUM_DEVICE_INPUT_BUFFERS =
 #pragma pop_macro("IOCTL_SET_NUM_DEVICE_INPUT_BUFFERS")
       IOCTL_SET_NUM_DEVICE_INPUT_BUFFERS;
+
+#pragma push_macro("IOCTL_HID_GET_OUTPUT_REPORT")
+#undef IOCTL_HID_GET_OUTPUT_REPORT
+    inline constexpr auto IOCTL_HID_GET_OUTPUT_REPORT =
+#pragma pop_macro("IOCTL_HID_GET_OUTPUT_REPORT")
+      IOCTL_HID_GET_OUTPUT_REPORT;
+
+    // HID_STRING_ID_* are the values a client passes as the input buffer of
+    // IOCTL_HID_GET_STRING (hidport.h:213-215).
+#pragma push_macro("HID_STRING_ID_IMANUFACTURER")
+#undef HID_STRING_ID_IMANUFACTURER
+    inline constexpr auto HID_STRING_ID_IMANUFACTURER =
+#pragma pop_macro("HID_STRING_ID_IMANUFACTURER")
+      HID_STRING_ID_IMANUFACTURER;
+
+#pragma push_macro("HID_STRING_ID_IPRODUCT")
+#undef HID_STRING_ID_IPRODUCT
+    inline constexpr auto HID_STRING_ID_IPRODUCT =
+#pragma pop_macro("HID_STRING_ID_IPRODUCT")
+      HID_STRING_ID_IPRODUCT;
+
+#pragma push_macro("HID_STRING_ID_ISERIALNUMBER")
+#undef HID_STRING_ID_ISERIALNUMBER
+    inline constexpr auto HID_STRING_ID_ISERIALNUMBER =
+#pragma pop_macro("HID_STRING_ID_ISERIALNUMBER")
+      HID_STRING_ID_ISERIALNUMBER;
+
+    // HID_DRIVER_CONFIG (hidclass.h:275) and HID_COLLECTION_INFORMATION (hidclass.h:235) are the
+    // payloads of the "capability" iocontrols joy.cpl and the HID-games stack issue.
+    using ::HID_DRIVER_CONFIG;
+    using ::HID_COLLECTION_INFORMATION;
 } // namespace wdk

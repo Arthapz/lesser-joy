@@ -100,7 +100,54 @@ namespace lj {
     auto send_output_report(state& state) -> string {
         if (not state.current_device->is_open()) return std::format("{}", red_text_style | "no device selected!");
 
-        return {};
+        // the differential probing tool for the rumble block: type the report as hex bytes, one probe
+        // per line. the driver logs the bytes that arrive, so sweeping block[1..5] byte by byte is a
+        // shell loop instead of a recompile per experiment.
+        std::print("report (hex) > ");
+        auto len = ::_read(get_stdin_fd(), stdr::data(state.command_buffer), stdr::size(state.command_buffer));
+        if (len == 0 or len == 1) return std::format("{}", red_text_style | "invalid input!");
+
+        const auto input = string_view { stdr::data(state.command_buffer), as<usize>(len - 1) };
+
+        auto report = array<byte, output_report_size> {};
+        auto index  = 0_usize;
+        for (auto i = 0_usize; i < stdr::size(input); ++i) {
+            if (input[i] == ' ') continue;
+
+            if (i + 1 >= stdr::size(input))
+                return std::format("{}", red_text_style | "odd number of hex digits!");
+
+            const auto token = string_view { input.data() + i, 2 };
+            const auto value = to<u8>(token, 16);
+            if (not value) return std::format("{}", red_text_style | std::format("invalid byte: {}", token));
+            if (index >= output_report_size) return std::format("{}", red_text_style | "report too long!");
+
+            report[index] = as<byte>(*value);
+            i += 1;
+            ++index;
+        }
+
+        if (index == 0) return std::format("{}", red_text_style | "nothing to send!");
+
+        if (report[0] != as<byte>(output_report_id))
+            return std::format("{}", red_text_style | std::format("the report id must be {:#x}", output_report_id));
+
+        // the driver only accepts a report that is exactly HIDP_CAPS::OutputReportByteLength long, so a
+        // short probe line is zero-padded rather than refused: the tail is reserved bytes anyway.
+        if (index != output_report_size)
+            ilog("padded the report to {} bytes", output_report_size);
+
+        auto result = state.current_device->send_output_report(report);
+        if (not result) {
+            return std::format("{}",
+                               red_text_style
+                                 | std::format("Failed to send output report {}, reason: {} {}",
+                                               report,
+                                               hid_error(ref_of(*state.current_device)),
+                                               error_code::from_win32()));
+        }
+
+        return std::format("sent {}", green_text_style | report);
     }
 
     auto send_rumble_test(state& state) -> string {
@@ -154,12 +201,20 @@ namespace lj {
             into<array>(as_bytes, { 0x00, 0x00, 0x00, 0x00, 0x00 })
         };
 
+        // the rumble blocks are a time-sampled stream, not a one-shot command: replay at the capture
+        // rate (the HID interrupt OUT endpoint declares bInterval 4) and keep the tick monotonic.
+        // replaying at 1 Hz is a different signal, and a tick that wraps while the stream stalls looks
+        // like a broken waveform rather than a broken encoding.
+        static constexpr auto frame_interval = 16ms;
+        static constexpr auto tick_mask      = 0xF_u8;
+
         auto counter = 0_u8;
         for (const auto& pattern : haptic_patterns) {
-            auto report  = array<byte, 42> {};
-            report[0x00] = 0x02_b;
-            report[0x01] = 0x50_b | as<byte>(counter & 0xF); // left
-            report[0x11] = report[1];                        // right
+            auto report = array<byte, output_report_size> {};
+            report[0]   = as<byte>(output_report_id);
+
+            report[0x01] = 0x50_b | as<byte>(counter & tick_mask); // left
+            report[0x11] = report[0x01];                             // right
 
             for (auto i : range(stdr::size(pattern))) {
                 report[0x02 + i] = pattern[i]; // left
@@ -178,11 +233,8 @@ namespace lj {
                                                    error_code::from_win32()));
             }
 
-            std::this_thread::sleep_for(1s);
-
-            if (counter == 0x0F) counter = 0;
-            else
-                counter = (counter + 1);
+            std::this_thread::sleep_for(frame_interval);
+            counter = (counter + 1) & tick_mask;
         }
 
         return {};

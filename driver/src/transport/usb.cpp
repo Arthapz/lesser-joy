@@ -17,6 +17,14 @@ namespace stdv = std::views;
 namespace lj::transport {
     using axis_type = u16;
 
+    // the feature mask the controller needs for rumble to do anything at all: bit 5 (0x20) is rumble,
+    // and without it both rumble channels are ignored by the device.
+    // @see https://github.com/ndeadly/switch2_controller_research/blob/master/commands.md#0x0c---feature-select
+    static constexpr auto enabled_features = [] static noexcept {
+        using enum hid::feature_select::feature_flag;
+        return button_state | analog_sticks | rumble;
+    }();
+
     namespace {
         ////////////////////////////////////////
         ////////////////////////////////////////
@@ -230,6 +238,22 @@ namespace lj::transport {
         // Right joystick
         calibrate_joystick<usb_context::joystick_type::right>(usb, mutable_view_of(report).subspan(0x9, 0x3));
 
+        // input report 0x09, offset 0x0B: 0x38 when feature bit 5 (rumble) is set, 0x30 otherwise.
+        // this is free ground truth for "why is there no rumble": the byte is already present in a report
+        // the continuous reader receives on every poll, so a state change becomes a log line instead of a
+        // guess. only report 0x09 has that byte at that offset, so check the report id first.
+        // @see https://github.com/ndeadly/switch2_controller_research/blob/master/hid_reports.md#input-report-0x09
+        if (report[0] == 0x09_b) {
+            if (const auto gate = report[0x0B]; gate != 0x38_b and gate != 0x30_b)
+                dlog("Unexpected rumble gate byte! {:#x}", as<u8>(gate));
+            else if (gate == 0x30_b and usb.rumble_gate_ != gate) {
+                wlog("Controller reports the rumble feature DISABLED -- re-arming the feature mask");
+                usb.rumble_gate_ = gate;
+                usb.mark_needs_rearm();
+            } else
+                usb.rumble_gate_ = gate;
+        }
+
         // Update input report
         usb.last_input_report_.assign(std::move(report));
     }
@@ -247,10 +271,6 @@ namespace lj::transport {
     ////////////////////////////////////////
     ////////////////////////////////////////
     auto usb_context::device_entry() noexcept -> system_result<void> {
-        using enum hid::feature_select::feature_flag;
-
-        static constexpr auto enabled_features = button_state | analog_sticks | rumble;
-
         // Send init sequence
         LoggedTry((send_command<hid::init::initialize_usb_command>()), "Failed to initialize USB link!");
         LoggedTry((send_command<hid::feature_select::set_feature_mask_command>(enabled_features)), "Failed to set feature mask!");
@@ -282,7 +302,26 @@ namespace lj::transport {
 
     ////////////////////////////////////////
     ////////////////////////////////////////
-    auto usb_context::device_exit() const noexcept -> system_result<void> {
+    auto usb_context::rearm_features() noexcept -> system_result<void> {
+        // the feature mask gates both rumble channels, and a reset by the HID stack drops it silently.
+        // only the feature half of the init sequence is replayed here, not the whole sequence. the flag
+        // clears only once both commands landed, so a failed re-arm is retried by the next report.
+        LoggedTry((send_command<hid::feature_select::set_feature_mask_command>(enabled_features)),
+                  "Failed to re-arm the feature mask!");
+        LoggedTry((send_command<hid::feature_select::enable_features_command>(enabled_features)),
+                  "Failed to re-enable features!");
+
+        needs_rearm_ = false;
+        return {};
+    }
+
+    ////////////////////////////////////////
+    ////////////////////////////////////////
+    auto usb_context::device_exit() noexcept -> system_result<void> {
+        // sample 0x0 == silence: never leave a rumble running when the driver unloads
+        if (not send_command<hid::vibration::play_sample_command>(hid::vibration::sample::silence))
+            wlog("Failed to stop rumble on device exit!");
+
         // Stop continueous reader
         auto io_target = wdk::WdfUsbTargetPipeGetIoTarget(hid_.in_pipe);
         wdk::WdfIoTargetStop(io_target, wdk::WdfIoTargetCancelSentIo);
@@ -296,46 +335,110 @@ namespace lj::transport {
     ////////////////////////////////////////
     ////////////////////////////////////////
     auto usb_context::send_data(array_view<const byte> payload, endpoint_type endpoint) const noexcept -> system_result<void> {
-        // Retrieve io target
-        auto target = wdk::WdfUsbTargetDeviceGetIoTarget(device_);
+        // a report must land as one uninterrupted write: the controller cannot tell a report boundary
+        // from a byte boundary, so the whole format+send pair is guarded per output pipe.
+        return (endpoint == endpoint_type::command ? command_out_pipe_ : hid_out_pipe_)
+            .read([&](const auto& guard) noexcept -> system_result<void> {
+                // Retrieve io target
+                auto target = wdk::WdfUsbTargetDeviceGetIoTarget(device_);
 
-        // Initialize request
-        auto request = wdk::WDFREQUEST {};
-        LoggedTry(lj::win_call(wdk::WdfRequestCreate, nullptr, target, &request), "wdk::WdfRequestCreate failed!");
+                // Initialize request
+                auto request = wdk::WDFREQUEST {};
+                LoggedTry(lj::win_call(wdk::WdfRequestCreate, nullptr, target, &request), "wdk::WdfRequestCreate failed!");
 
-        auto release = true;
-        auto _       = at_scope_exit_do([request, &release] noexcept {
-            if (release) wdk::WdfObjectDelete(request);
-        });
+                auto release = true;
+                auto _       = at_scope_exit_do([request, &release] noexcept {
+                    if (release) wdk::WdfObjectDelete(request);
+                });
 
-        // Allocate request memory and fill it with payload
-        LoggedTryTo(result, wdf_memory_allocate(stdr::size(payload), request), "Failed to allocate memory for USB send payload!");
-        auto [memory, write_buffer] = std::move(result);
-        stdr::copy(payload, stdr::begin(write_buffer));
+                // Allocate request memory and fill it with payload
+                LoggedTryTo(result,
+                            wdf_memory_allocate(stdr::size(payload), request),
+                            "Failed to allocate memory for USB send payload!");
+                auto [memory, write_buffer] = std::move(result);
+                stdr::copy(payload, stdr::begin(write_buffer));
 
-        LoggedTry(lj::win_call(wdk::WdfUsbTargetPipeFormatRequestForWrite,
-                               endpoint == endpoint_type::command ? command_.out_pipe : hid_.out_pipe,
-                               request,
-                               memory,
-                               wdk::WDF_NO_HANDLE),
-                  "wdk::WdfUsbTargetPipeFormatRequestForWrite failed!");
+                LoggedTry(lj::win_call(wdk::WdfUsbTargetPipeFormatRequestForWrite,
+                                       guard.pipe,
+                                       request,
+                                       memory,
+                                       wdk::WDF_NO_HANDLE),
+                          "wdk::WdfUsbTargetPipeFormatRequestForWrite failed!");
 
-        // Setup completion callback
-        wdk::WdfRequestSetCompletionRoutine(request, request_completion_routine, wdk::WDF_NO_HANDLE);
+                // Setup completion callback
+                wdk::WdfRequestSetCompletionRoutine(request, request_completion_routine, wdk::WDF_NO_HANDLE);
 
-        // Send request
-        if (wdk::WdfRequestSend(request, target, wdk::WDF_NO_SEND_OPTIONS) == win32::FALSE) {
-            const auto status = wdk::WdfRequestGetStatus(request);
-            dlog("wdk::WdfRequestSend failed!\n    reason: {:#x}", as<ulong>(status));
-            return std::unexpected { error_code::from_ntstatus(status) };
-        }
+                // Send request
+                if (wdk::WdfRequestSend(request, target, wdk::WDF_NO_SEND_OPTIONS) == win32::FALSE) {
+                    const auto status = wdk::WdfRequestGetStatus(request);
+                    dlog("wdk::WdfRequestSend failed!\n    reason: {:#x}", as<ulong>(status));
+                    return std::unexpected { error_code::from_ntstatus(status) };
+                }
 
-        release = false;
-        dlog("request {}, {::#x} sent",
-             static_cast<void*>(request),
-             array_view<const u8> { reinterpret_cast<const u8*>(stdr::data(payload)), stdr::size(payload) });
+                release = false;
+                dlog("request {}, {::#x} sent",
+                     static_cast<void*>(request),
+                     array_view<const u8> { reinterpret_cast<const u8*>(stdr::data(payload)), stdr::size(payload) });
 
-        return {};
+                return {};
+            });
+    }
+
+    ////////////////////////////////////////
+    ////////////////////////////////////////
+    auto usb_context::send_data_bounded(array_view<const byte> payload,
+                                        endpoint_type endpoint,
+                                        ulong timeout_ms) const noexcept -> system_result<void> {
+        return (endpoint == endpoint_type::command ? command_out_pipe_ : hid_out_pipe_)
+            .read([&](const auto& guard) noexcept -> system_result<void> {
+                // Retrieve io target
+                auto target = wdk::WdfUsbTargetDeviceGetIoTarget(device_);
+
+                // Create and fill request send options -- the timeout is the point of this variant:
+                // without it a caller such as joy.cpl or hidapi is told "success" as soon as the
+                // USB queue accepted the request, which says nothing about the controller.
+                auto options = wdk::WDF_REQUEST_SEND_OPTIONS {};
+                wdk::WDF_REQUEST_SEND_OPTIONS_INIT(&options,
+                                                   wdk::WDF_REQUEST_SEND_OPTIONS_FLAGS::WDF_REQUEST_SEND_OPTION_TIMEOUT);
+                wdk::WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT(&options, wdk::WDF_REL_TIMEOUT_IN_MS(timeout_ms));
+
+                // Initialize request
+                auto request = wdk::WDFREQUEST {};
+                LoggedTry(lj::win_call(wdk::WdfRequestCreate, nullptr, target, &request), "wdk::WdfRequestCreate failed!");
+
+                auto release = true;
+                auto _       = at_scope_exit_do([request, &release] noexcept {
+                    if (release) wdk::WdfObjectDelete(request);
+                });
+
+                // Allocate request memory and fill it with payload
+                LoggedTryTo(result,
+                            wdf_memory_allocate(stdr::size(payload), request),
+                            "Failed to allocate memory for USB send payload!");
+                auto [memory, write_buffer] = std::move(result);
+                stdr::copy(payload, stdr::begin(write_buffer));
+
+                LoggedTry(lj::win_call(wdk::WdfUsbTargetPipeFormatRequestForWrite,
+                                       guard.pipe,
+                                       request,
+                                       memory,
+                                       wdk::WDF_NO_HANDLE),
+                          "wdk::WdfUsbTargetPipeFormatRequestForWrite failed!");
+
+                // no completion routine: with a timeout in the send options the send is synchronous,
+                // the request stays owned here and its status is the answer.
+                if (wdk::WdfRequestSend(request, target, &options) == win32::FALSE) {
+                    const auto status = wdk::WdfRequestGetStatus(request);
+                    elog("Output report send failed! status: {:#x}", as<ulong>(status));
+                    return std::unexpected { error_code::from_ntstatus(status) };
+                }
+
+                dlog("request {}, {::#x} sent (bounded)",
+                     static_cast<void*>(request),
+                     array_view<const u8> { reinterpret_cast<const u8*>(stdr::data(payload)), stdr::size(payload) });
+
+                return {};
+            });
     }
 
     ////////////////////////////////////////
@@ -348,14 +451,17 @@ namespace lj::transport {
                                                std::bit_cast<void*>(stdr::data(payload)),
                                                stdr::size(payload));
 
-        // Send request
+        // Send request -- same one-write-per-pipe rule as send_data()
         auto written = ulong { 0 };
-        LoggedTry(lj::win_call(wdk::WdfUsbTargetPipeWriteSynchronously,
-                               endpoint == endpoint_type::command ? command_.out_pipe : hid_.out_pipe,
-                               nullptr,
-                               nullptr,
-                               &memory_descriptor,
-                               &written),
+        LoggedTry((endpoint == endpoint_type::command ? command_out_pipe_ : hid_out_pipe_)
+                      .read([&](const auto& guard) noexcept -> system_result<void> {
+                          return lj::win_call(wdk::WdfUsbTargetPipeWriteSynchronously,
+                                              guard.pipe,
+                                              nullptr,
+                                              nullptr,
+                                              &memory_descriptor,
+                                              &written);
+                      }),
                   "wdk::WdfUsbTargetPipeWriteSynchronously failed!");
 
         dlog("Sent {::#x}", array_view<const u8> { reinterpret_cast<const u8*>(stdr::data(payload)), stdr::size(payload) });

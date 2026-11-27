@@ -47,7 +47,10 @@ export namespace lj::hid::ioctl {
     auto read_report(wdk::WDFREQUEST request, const transport::usb_context& ctx) noexcept -> system_result<void>;
     auto write_report(wdk::WDFREQUEST request, array_view<const byte> from) noexcept -> system_result<void>;
     auto write_report(wdk::WDFREQUEST request, const transport::usb_context& ctx) noexcept -> system_result<void>;
-    auto get_string(wdk::WDFREQUEST request, string_view product_string, string_view serial_string) noexcept
-      -> system_result<void>;
+    auto get_string(wdk::WDFREQUEST request,
+                    string_view manufacturer_string,
+                    string_view product_string,
+                    string_view serial_string) noexcept -> system_result<void>;
     auto get_indexed_string(wdk::WDFREQUEST request, string_view product_string) noexcept -> system_result<void>;
+    auto get_wide_string(wdk::WDFREQUEST request, string_view value) noexcept -> system_result<void>;
 } // namespace lj::hid::ioctl

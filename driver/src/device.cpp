@@ -78,7 +78,8 @@ namespace lj {
         hid_attributes_.ProductID = default_controller.pid;
         hid_descriptor_           = hid::default_descriptor;
         report_descriptor_        = hid::default_report_descriptor;
-        product_string_           = default_controller.product_string;
+        product_string_      = default_controller.product_string;
+        manufacturer_string_ = default_controller.manufacturer_string;
 
         // set BusReportedDeviceDesc so joy.cpl shows the profile name
         // DEVPKEY_Device_BusReportedDeviceDesc = {540b947e-8b40-45bc-a8a2-6a0b894cbda2}
@@ -218,7 +219,7 @@ namespace lj {
                                    usize           output_buffer_size,
                                    usize           input_buffer_size,
                                    u32             io_control_code,
-                                   tag) const noexcept -> void {
+                                   tag) noexcept -> void {
         auto request_completed = true;
         auto status            = wdk::NTSTATUS { wdk::STATUS_SUCCESS };
 
@@ -228,7 +229,51 @@ namespace lj {
 
         const auto update_status = [&status](auto&& error) noexcept { status = error.value(); };
 
-        const auto& device_ctx = *device_ctx_;
+        auto& device_ctx = *device_ctx_;
+
+        // both write iocontrols funnel into the same USB pipe. without this guard usb_ctx() would
+        // std::get a variant that still holds std::monostate -- throwing inside a noexcept function is
+        // std::terminate inside the UMDF host, and every consumer that opens the device would hit it
+        // whenever prepare_hardware failed (for example interface_count < 2).
+        const auto write_report_or_refuse = [&](wdk::WDFREQUEST request) noexcept {
+            if (not device_ctx.is_usb()) {
+                wlog("{}: no USB transport attached!", lj::hid::ioctl_name(io_control_code));
+                status = wdk::STATUS_INVALID_DEVICE_STATE;
+                return;
+            }
+
+            // the feature mask that gates rumble is set once at D0Entry, and a reset by the HID stack
+            // drops it silently. the next output report is the last moment before a consumer gives up
+            // on rumble, so re-arm here -- and answer the report either way, because a failed re-arm is
+            // not the consumer's fault.
+            if (auto& usb = device_ctx.usb_ctx(); usb.needs_rearm()) {
+                if (not usb.rearm_features()) wlog("Failed to re-arm the feature mask!");
+            }
+
+            CustomLoggedTryOr(hid::ioctl::write_report(request, device_ctx.usb_ctx()),
+                              update_status,
+                              lj::elog,
+                              "IOCTL Failed to write report!");
+        };
+
+        // METHOD_BUFFERED iocontrols (hidclass.h:141-149) carry a plain ULONG. these two helpers read and
+        // answer one, refusing with a logged status instead of trusting the caller's buffer.
+        const auto read_ulong = [&](wdk::WDFREQUEST request) noexcept -> std::optional<win32::ULONG> {
+            const auto buffer = get_wdf_request_memory(request);
+            if (not buffer or stdr::size(*buffer) < sizeof(win32::ULONG)) return std::nullopt;
+
+            return *reinterpret_cast<const win32::ULONG*>(stdr::data(*buffer));
+        };
+
+        const auto write_ulong = [&](wdk::WDFREQUEST request, win32::ULONG value) noexcept {
+            auto payload = array<byte, sizeof(win32::ULONG)> {};
+            *reinterpret_cast<win32::ULONG*>(stdr::data(payload)) = value;
+
+            CustomLoggedTryOr(fill_wdf_request_memory(request, payload),
+                              update_status,
+                              lj::elog,
+                              "IOCTL Failed to fill the output buffer!");
+        };
 
         switch (io_control_code) {
             case wdk::IOCTL_HID_GET_DEVICE_DESCRIPTOR: {
@@ -256,8 +301,18 @@ namespace lj {
             } break;
 
             case wdk::IOCTL_HID_GET_INPUT_REPORT: {
-                wlog("IOCTL_HID_GET_INPUT_REPORT not supported");
-                status = wdk::STATUS_NOT_IMPLEMENTED;
+                dlog("IOCTL_HID_GET_INPUT_REPORT");
+
+                // class-level twin of IOCTL_UMDF_HID_GET_INPUT_REPORT: answer it the same way instead
+                // of refusing, otherwise non-UMDF readers see a device that cannot give back a report.
+                request_completed = false;
+                if (device_ctx.is_usb()) {
+                    CustomLoggedTryOr(hid::ioctl::read_report(request, device_ctx.usb_ctx()),
+                                      update_status,
+                                      lj::elog,
+                                      "OCTL Failed to read report!");
+                    request_completed = true;
+                }
             } break;
 
             case wdk::IOCTL_HID_READ_REPORT: {
@@ -272,40 +327,65 @@ namespace lj {
             } break;
 
             case wdk::IOCTL_HID_WRITE_REPORT: {
-                CustomLoggedTryOr(hid::ioctl::write_report(request, device_ctx.usb_ctx()),
-                                  update_status,
-                                  lj::elog,
-                                  "IOCTL Failed to write report!");
+                dlog("IOCTL_HID_WRITE_REPORT");
+                write_report_or_refuse(request);
             } break;
 
             case wdk::IOCTL_HID_GET_STRING: {
+                // usb_ctx() is only valid once prepare_hardware succeeded, so the accessors below have
+                // to check is_usb() first -- otherwise this is the same std::terminate hazard as the write
+                // path.
                 const auto& product_string = [&device_ctx] noexcept -> const string& {
-                    const auto& ctx = device_ctx.usb_ctx();
-                    if (ctx.has_product_string()) return ctx.product_string();
+                    if (device_ctx.is_usb() and device_ctx.usb_ctx().has_product_string())
+                        return device_ctx.usb_ctx().product_string();
 
                     return device_ctx.product_string();
                 }();
 
                 const auto& serial_string = [&device_ctx] noexcept -> const string& {
-                    const auto& ctx = device_ctx.usb_ctx();
-                    if (ctx.has_serial_string()) return ctx.serial_string();
-                    else {
-                        static constinit auto empty_serial = string { "NO SERIAL" };
-                        return empty_serial;
-                    }
-                    std::unreachable();
+                    if (device_ctx.is_usb() and device_ctx.usb_ctx().has_serial_string())
+                        return device_ctx.usb_ctx().serial_string();
+
+                    static constinit auto empty_serial = string { "NO SERIAL" };
+                    return empty_serial;
                 }();
 
-                CustomLoggedTryOr(hid::ioctl::get_string(request, product_string, serial_string),
+                const auto& manufacturer_string = device_ctx.manufacturer_string();
+
+                CustomLoggedTryOr(hid::ioctl::get_string(request, manufacturer_string, product_string, serial_string),
                                   update_status,
                                   lj::elog,
                                   "IOCTL Failed to get string!");
             } break;
 
+            case wdk::IOCTL_HID_GET_MANUFACTURER_STRING: {
+                dlog("IOCTL_HID_GET_MANUFACTURER_STRING");
+                CustomLoggedTryOr(hid::ioctl::get_wide_string(request, device_ctx.manufacturer_string()),
+                                  update_status,
+                                  lj::elog,
+                                  "IOCTL Failed to get manufacturer string!");
+            } break;
+
+            case wdk::IOCTL_HID_GET_PRODUCT_STRING: {
+                dlog("IOCTL_HID_GET_PRODUCT_STRING");
+                CustomLoggedTryOr(hid::ioctl::get_wide_string(request, device_ctx.product_string()),
+                                  update_status,
+                                  lj::elog,
+                                  "IOCTL Failed to get product string!");
+            } break;
+
+            case wdk::IOCTL_HID_GET_SERIALNUMBER_STRING: {
+                dlog("IOCTL_HID_GET_SERIALNUMBER_STRING");
+                CustomLoggedTryOr(hid::ioctl::get_wide_string(request, device_ctx.serial_string()),
+                                  update_status,
+                                  lj::elog,
+                                  "IOCTL Failed to get serial number string!");
+            } break;
+
             case wdk::IOCTL_HID_GET_INDEXED_STRING: {
                 const auto& product_string = [&device_ctx] noexcept -> const string& {
-                    const auto& ctx = device_ctx.usb_ctx();
-                    if (ctx.has_product_string()) return ctx.product_string();
+                    if (device_ctx.is_usb() and device_ctx.usb_ctx().has_product_string())
+                        return device_ctx.usb_ctx().product_string();
 
                     return device_ctx.product_string();
                 }();
@@ -317,8 +397,13 @@ namespace lj {
             } break;
 
             case wdk::IOCTL_HID_DEVICERESET_NOTIFICATION: {
-                wlog("IOCTL_HID_DEVICERESET_NOTIFICATION not supported");
-                status = wdk::STATUS_NOT_IMPLEMENTED;
+                dlog("IOCTL_HID_DEVICERESET_NOTIFICATION");
+
+                // the feature mask that gates rumble is set once at D0Entry, so a reset by the HID stack
+                // silently drops it and rumble stops working with no log. remember it and re-arm lazily
+                // on the next output report instead of refusing the notification.
+                if (device_ctx.is_usb()) device_ctx.usb_ctx().mark_needs_rearm();
+                status = wdk::STATUS_SUCCESS; // handled: lazily, on the next write
             } break;
 
             case wdk::IOCTL_HID_ACTIVATE_DEVICE: {
@@ -327,8 +412,12 @@ namespace lj {
             } break;
 
             case wdk::IOCTL_HID_DEACTIVATE_DEVICE: {
-                wlog("IOCTL_HID_DEACTIVATE_DEVICE not supported!");
-                status = wdk::STATUS_NOT_IMPLEMENTED;
+                dlog("IOCTL_HID_DEACTIVATE_DEVICE");
+
+                // asymmetric with IOCTL_HID_ACTIVATE_DEVICE above, which already succeeds: consumers such
+                // as joy.cpl and hidapi deactivate on teardown, and a NOT_IMPLEMENTED here is noise they
+                // cannot distinguish from a real failure.
+                status = wdk::STATUS_SUCCESS;
             } break;
 
             case wdk::IOCTL_HID_SEND_IDLE_NOTIFICATION_REQUEST: {
@@ -342,7 +431,10 @@ namespace lj {
             } break;
 
             case wdk::IOCTL_UMDF_HID_GET_FEATURE: {
-                wlog("IOCTL_UMDF_HID_GET_FEATURE not supported");
+                // see IOCTL_HID_GET_FEATURE below: refusing is correct only while the report descriptor
+                // declares no feature report at all.
+                wlog("{}: no feature report is declared in the report descriptor",
+                     lj::hid::ioctl_name(io_control_code));
                 status = wdk::STATUS_NOT_IMPLEMENTED;
             } break;
 
@@ -358,18 +450,182 @@ namespace lj {
             } break;
 
             case wdk::IOCTL_UMDF_HID_SET_FEATURE: {
-                wlog("IOCTL_UMDF_HID_SET_FEATURE not supported");
+                // refusing keeps the mask we set at D0Entry authoritative: a consumer cannot turn rumble
+                // off behind our back, but it also cannot turn it on for us. see IOCTL_HID_SET_FEATURE below.
+                wlog("{}: no feature report is declared in the report descriptor",
+                     lj::hid::ioctl_name(io_control_code));
                 status = wdk::STATUS_NOT_IMPLEMENTED;
             } break;
 
             case wdk::IOCTL_UMDF_HID_SET_OUTPUT_REPORT: {
-                CustomLoggedTryOr(hid::ioctl::write_report(request, device_ctx.usb_ctx()),
+                dlog("IOCTL_UMDF_HID_SET_OUTPUT_REPORT");
+                write_report_or_refuse(request);
+            } break;
+
+            case wdk::IOCTL_HID_SET_OUTPUT_REPORT: {
+                dlog("IOCTL_HID_SET_OUTPUT_REPORT");
+
+                // METHOD_IN_DIRECT (hidclass.h:156): the report arrives in the input buffer, exactly like
+                // the UMDF twin, so the same implementation answers both.
+                write_report_or_refuse(request);
+            } break;
+
+            case wdk::IOCTL_HID_GET_OUTPUT_REPORT: {
+                wlog("{}: nothing to echo back -- the driver keeps no copy of the last output report",
+                     lj::hid::ioctl_name(io_control_code));
+                status = wdk::STATUS_NOT_IMPLEMENTED;
+            } break;
+
+            case wdk::IOCTL_HID_GET_DRIVER_CONFIG: {
+                dlog("IOCTL_HID_GET_DRIVER_CONFIG");
+
+                auto config = wdk::HID_DRIVER_CONFIG {
+                    .Size           = sizeof(wdk::HID_DRIVER_CONFIG),
+                    .RingBufferSize = device_ctx.ring_buffer_size()
+                };
+
+                CustomLoggedTryOr(fill_wdf_request_memory(request, bytes_of(config)),
                                   update_status,
                                   lj::elog,
-                                  "IOCTL Failed to write report!");
+                                  "IOCTL Failed to get driver config!");
+            } break;
+
+            case wdk::IOCTL_HID_SET_DRIVER_CONFIG: {
+                dlog("IOCTL_HID_SET_DRIVER_CONFIG");
+
+                const auto buffer = get_wdf_request_memory(request);
+                if (not buffer or stdr::size(*buffer) < sizeof(wdk::HID_DRIVER_CONFIG)) {
+                    wlog("IOCTL_HID_SET_DRIVER_CONFIG: input buffer too small!");
+                    status = wdk::STATUS_INVALID_PARAMETER;
+                    break;
+                }
+
+                const auto& incoming = *reinterpret_cast<const wdk::HID_DRIVER_CONFIG*>(stdr::data(*buffer));
+                device_ctx.set_ring_buffer_size(incoming.RingBufferSize);
+            } break;
+
+            case wdk::IOCTL_HID_GET_POLL_FREQUENCY_MSEC: {
+                dlog("IOCTL_HID_GET_POLL_FREQUENCY_MSEC");
+                write_ulong(request, device_ctx.poll_frequency_msec());
+            } break;
+
+            case wdk::IOCTL_HID_SET_POLL_FREQUENCY_MSEC: {
+                dlog("IOCTL_HID_SET_POLL_FREQUENCY_MSEC");
+
+                const auto value = read_ulong(request);
+                if (not value) {
+                    wlog("IOCTL_HID_SET_POLL_FREQUENCY_MSEC: input buffer too small!");
+                    status = wdk::STATUS_INVALID_PARAMETER;
+                    break;
+                }
+
+                device_ctx.set_poll_frequency_msec(*value);
+            } break;
+
+            case wdk::IOCTL_GET_NUM_DEVICE_INPUT_BUFFERS: {
+                dlog("IOCTL_GET_NUM_DEVICE_INPUT_BUFFERS");
+                write_ulong(request, device_ctx.num_input_buffers());
+            } break;
+
+            case wdk::IOCTL_SET_NUM_DEVICE_INPUT_BUFFERS: {
+                dlog("IOCTL_SET_NUM_DEVICE_INPUT_BUFFERS");
+
+                const auto value = read_ulong(request);
+                if (not value or *value == 0) {
+                    wlog("IOCTL_SET_NUM_DEVICE_INPUT_BUFFERS: invalid buffer count!");
+                    status = wdk::STATUS_INVALID_PARAMETER;
+                    break;
+                }
+
+                device_ctx.set_num_input_buffers(*value);
+            } break;
+
+            case wdk::IOCTL_HID_GET_COLLECTION_INFORMATION: {
+                dlog("IOCTL_HID_GET_COLLECTION_INFORMATION");
+
+                // this is how the HID-games stack and joy.cpl identify the device: without it the
+                // controller is present but unclassifiable, so it never shows up as a gamepad.
+                auto info = wdk::HID_COLLECTION_INFORMATION {
+                    .DescriptorSize = 0, // no collection descriptor is served
+                    .Polled         = win32::TRUE,
+                    .Reserved1      = { 0 },
+                    .VendorID       = device_ctx.vendor_id(),
+                    .ProductID      = device_ctx.product_id(),
+                    .VersionNumber  = 0x0002
+                };
+
+                CustomLoggedTryOr(fill_wdf_request_memory(request, bytes_of(info)),
+                                  update_status,
+                                  lj::elog,
+                                  "IOCTL Failed to get collection information!");
+            } break;
+
+            case wdk::IOCTL_HID_ENABLE_WAKE_ON_SX: {
+                dlog("IOCTL_HID_ENABLE_WAKE_ON_SX");
+
+                const auto value = read_ulong(request);
+                if (not value) {
+                    wlog("IOCTL_HID_ENABLE_WAKE_ON_SX: input buffer too small!");
+                    status = wdk::STATUS_INVALID_PARAMETER;
+                    break;
+                }
+
+                device_ctx.set_wake_on_sx(*value != 0);
+            } break;
+
+            case wdk::IOCTL_HID_SET_S0_IDLE_TIMEOUT: {
+                dlog("IOCTL_HID_SET_S0_IDLE_TIMEOUT");
+
+                const auto value = read_ulong(request);
+                if (not value) {
+                    wlog("IOCTL_HID_SET_S0_IDLE_TIMEOUT: input buffer too small!");
+                    status = wdk::STATUS_INVALID_PARAMETER;
+                    break;
+                }
+
+                device_ctx.set_s0_idle_timeout(*value);
+            } break;
+
+            case wdk::IOCTL_HID_FLUSH_QUEUE: {
+                dlog("IOCTL_HID_FLUSH_QUEUE");
+
+                // HidD_FlushQueue: there is no queue of our own to drain -- the continuous reader keeps
+                // only the last input report -- so acknowledge instead of refusing.
+                status = wdk::STATUS_SUCCESS;
+            } break;
+
+            case wdk::IOCTL_HID_ENABLE_SECURE_READ: {
+                dlog("IOCTL_HID_ENABLE_SECURE_READ");
+
+                const auto value = read_ulong(request);
+                if (not value) {
+                    wlog("IOCTL_HID_ENABLE_SECURE_READ: input buffer too small!");
+                    status = wdk::STATUS_INVALID_PARAMETER;
+                    break;
+                }
+
+                device_ctx.set_secure_read(*value != 0);
+            } break;
+
+            case wdk::IOCTL_HID_DISABLE_SECURE_READ: {
+                dlog("IOCTL_HID_DISABLE_SECURE_READ");
+                device_ctx.set_secure_read(false);
+            } break;
+
+            case wdk::IOCTL_HID_GET_FEATURE:
+            case wdk::IOCTL_HID_SET_FEATURE: {
+                // honest refusal: the report descriptor declares no feature report, so the OS derives
+                // HIDP_CAPS::FeatureReportByteLength == 0 and there is no legal buffer size to answer into.
+                // supporting these means adding a feature report to the descriptor, not just a handler.
+                wlog("{}: no feature report is declared in the report descriptor",
+                     lj::hid::ioctl_name(io_control_code));
+                status = wdk::STATUS_NOT_IMPLEMENTED;
             } break;
 
             default: {
+                // 24 iocontrols used to land here silently. when a game fails to see the controller there
+                // is nothing to correlate, so name the code the consumer actually asked for.
+                wlog("{} (code {:#x}) not handled", lj::hid::ioctl_name(io_control_code), io_control_code);
                 status = wdk::STATUS_NOT_IMPLEMENTED;
             } break;
         }

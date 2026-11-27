@@ -70,7 +70,31 @@ export namespace lj {
 
         inline auto product_string() const noexcept -> const string& { return product_string_; }
 
+        inline auto manufacturer_string() const noexcept -> const string& { return manufacturer_string_; }
+
         inline auto serial_string() const noexcept -> const string& { return serial_string_; }
+
+        // answers for the "capability" iocontrols joy.cpl and the HID-games stack issue
+        // (IOCTL_HID_GET/SET_DRIVER_CONFIG, ..._POLL_FREQUENCY_MSEC, ..._NUM_DEVICE_INPUT_BUFFERS,
+        // ..._S0_IDLE_TIMEOUT, ..._SECURE_READ, ..._WAKE_ON_SX). they are stored and echoed instead of
+        // refused so a consumer that configures the device ends up believing something true about it.
+        inline auto poll_frequency_msec() const noexcept -> u32 { return poll_frequency_msec_; }
+
+        inline auto num_input_buffers() const noexcept -> u32 { return num_input_buffers_; }
+
+        inline auto ring_buffer_size() const noexcept -> u32 { return ring_buffer_size_; }
+
+        inline auto set_poll_frequency_msec(u32 value) noexcept -> void { poll_frequency_msec_ = value; }
+
+        inline auto set_num_input_buffers(u32 value) noexcept -> void { num_input_buffers_ = value; }
+
+        inline auto set_ring_buffer_size(u32 value) noexcept -> void { ring_buffer_size_ = value; }
+
+        inline auto set_s0_idle_timeout(u32 value) noexcept -> void { s0_idle_timeout_ = value; }
+
+        inline auto set_secure_read(bool value) noexcept -> void { secure_read_ = value; }
+
+        inline auto set_wake_on_sx(bool value) noexcept -> void { wake_on_sx_ = value; }
 
         inline auto hid_descriptor() const noexcept -> const wdk::HID_DESCRIPTOR& { return hid_descriptor_; }
 
@@ -101,8 +125,16 @@ export namespace lj {
 
         wdk::WDFDEVICE device_;
 
-        string product_string_ = {};
-        string serial_string_  = {};
+        string product_string_      = {};
+        string serial_string_       = {};
+        string manufacturer_string_ = {};
+
+        u32  poll_frequency_msec_ = 4; // the report descriptor declares bInterval 4
+        u32  num_input_buffers_   = 1; // a single continuous reader (transport/usb.cpp)
+        u32  ring_buffer_size_    = 2;
+        u32  s0_idle_timeout_     = 0;
+        bool secure_read_         = false;
+        bool wake_on_sx_          = false;
 
         wdk::HID_DESCRIPTOR        hid_descriptor_    = {};
         hid::report_descriptor     report_descriptor_ = {};
@@ -125,7 +157,7 @@ export namespace lj {
 
         static auto create(wdk::WDFDEVICE) noexcept -> wdk::NTSTATUS;
 
-        inline auto device_ctx() noexcept -> const device_context& { return *device_ctx_; }
+        inline auto device_ctx() noexcept -> device_context& { return *device_ctx_; }
 
         inline auto queue() noexcept -> wdk::WDFQUEUE {
             expects(queue_ != nullptr);
@@ -134,17 +166,17 @@ export namespace lj {
 
       private:
         // constructor is private because context types should be constructed with create static method
-        inline explicit queue_context(const device_context* device_ctx_, wdk::WDFQUEUE queue_) noexcept
+        inline explicit queue_context(device_context* device_ctx_, wdk::WDFQUEUE queue_) noexcept
             : device_ctx_ { device_ctx_ }, queue_ { queue_ } {}
 
         struct tag {};
 
-        auto io_control(wdk::WDFQUEUE, wdk::WDFREQUEST, usize, usize, u32, tag) const noexcept -> void;
+        auto io_control(wdk::WDFQUEUE, wdk::WDFREQUEST, usize, usize, u32, tag) noexcept -> void;
 
         // EvtIoDeviceControl
         static auto io_control(wdk::WDFQUEUE, wdk::WDFREQUEST, usize, usize, ULONG) noexcept -> void;
 
-        ref_ptr<const device_context> device_ctx_;
+        ref_ptr<device_context> device_ctx_;
         wdk::WDFQUEUE                 queue_ = nullptr;
     };
 

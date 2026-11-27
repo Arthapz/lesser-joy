@@ -63,8 +63,67 @@ export namespace lj {
     });
 
     namespace hid {
+        // HIDP_CAPS::InputReportByteLength / OutputReportByteLength exactly as the OS derives them
+        // from `default_report_descriptor` below: 1 report-id byte + the declared report count.
+        // report 0x05 and 0x09 each declare 63 data bytes; report 0x02 declares `0x95, 0x3F` = 63.
+        // @see WDK Include/10.0.28000.0/shared/hidpi.h:245 (HIDP_CAPS)
         inline constexpr auto input_report_size  = 64_usize;
-        inline constexpr auto output_report_size = 42_usize;
+        inline constexpr auto output_report_id   = 0x02_u8;
+        inline constexpr auto output_report_size = 64_usize;
+
+        // semantic layout of the output report payload; only `data_size` bytes are meaningful,
+        // the rest of the report is the reserved tail the descriptor still forces us to send.
+        // @see https://github.com/ndeadly/switch2_controller_research/blob/master/hid_reports.md#output-report-0x02
+        namespace rumble {
+            inline constexpr auto block_size   = 0x10_usize;
+            inline constexpr auto left_offset  = 0x01_usize;
+            inline constexpr auto right_offset = left_offset + block_size;
+            inline constexpr auto data_size    = right_offset + block_size; // 0x21
+        } // namespace rumble
+
+        // how long an output report send may stay in flight before we report failure to the caller.
+        // hidapi's winapi backend uses a 1 s write timeout for the same reason.
+        inline constexpr auto output_report_timeout_ms = 1000_u32;
+
+        // human-readable name for an iocontrol code so the unhandled path in device.cpp can report
+        // what a consumer actually asked for instead of swallowing it.
+        // @see WDK Include/10.0.28000.0/shared/hidport.h:183-200 and shared/hidclass.h:141-174
+        inline constexpr auto ioctl_names = make_static_hash_map<u32, frozen::string>({
+          { wdk::IOCTL_HID_GET_DRIVER_CONFIG, "IOCTL_HID_GET_DRIVER_CONFIG" },
+          { wdk::IOCTL_HID_SET_DRIVER_CONFIG, "IOCTL_HID_SET_DRIVER_CONFIG" },
+          { wdk::IOCTL_HID_GET_POLL_FREQUENCY_MSEC, "IOCTL_HID_GET_POLL_FREQUENCY_MSEC" },
+          { wdk::IOCTL_HID_SET_POLL_FREQUENCY_MSEC, "IOCTL_HID_SET_POLL_FREQUENCY_MSEC" },
+          { wdk::IOCTL_GET_NUM_DEVICE_INPUT_BUFFERS, "IOCTL_GET_NUM_DEVICE_INPUT_BUFFERS" },
+          { wdk::IOCTL_SET_NUM_DEVICE_INPUT_BUFFERS, "IOCTL_SET_NUM_DEVICE_INPUT_BUFFERS" },
+          { wdk::IOCTL_HID_GET_COLLECTION_INFORMATION, "IOCTL_HID_GET_COLLECTION_INFORMATION" },
+          { wdk::IOCTL_HID_ENABLE_WAKE_ON_SX, "IOCTL_HID_ENABLE_WAKE_ON_SX" },
+          { wdk::IOCTL_HID_SET_S0_IDLE_TIMEOUT, "IOCTL_HID_SET_S0_IDLE_TIMEOUT" },
+          { wdk::IOCTL_HID_GET_COLLECTION_DESCRIPTOR, "IOCTL_HID_GET_COLLECTION_DESCRIPTOR" },
+          { wdk::IOCTL_HID_FLUSH_QUEUE, "IOCTL_HID_FLUSH_QUEUE" },
+          { wdk::IOCTL_HID_SET_FEATURE, "IOCTL_HID_SET_FEATURE" },
+          { wdk::IOCTL_HID_SET_OUTPUT_REPORT, "IOCTL_HID_SET_OUTPUT_REPORT" },
+          { wdk::IOCTL_HID_GET_FEATURE, "IOCTL_HID_GET_FEATURE" },
+          { wdk::IOCTL_HID_GET_HARDWARE_ID, "IOCTL_HID_GET_HARDWARE_ID" },
+          { wdk::IOCTL_HID_GET_INDEXED_STRING, "IOCTL_HID_GET_INDEXED_STRING" },
+          { wdk::IOCTL_HID_GET_INPUT_REPORT, "IOCTL_HID_GET_INPUT_REPORT" },
+          { wdk::IOCTL_HID_GET_OUTPUT_REPORT, "IOCTL_HID_GET_OUTPUT_REPORT" },
+          { wdk::IOCTL_GET_PHYSICAL_DESCRIPTOR, "IOCTL_GET_PHYSICAL_DESCRIPTOR" },
+          { wdk::IOCTL_HID_GET_MANUFACTURER_STRING, "IOCTL_HID_GET_MANUFACTURER_STRING" },
+          { wdk::IOCTL_HID_GET_PRODUCT_STRING, "IOCTL_HID_GET_PRODUCT_STRING" },
+          { wdk::IOCTL_HID_GET_SERIALNUMBER_STRING, "IOCTL_HID_GET_SERIALNUMBER_STRING" },
+          { wdk::IOCTL_HID_GET_MS_GENRE_DESCRIPTOR, "IOCTL_HID_GET_MS_GENRE_DESCRIPTOR" },
+          { wdk::IOCTL_HID_ENABLE_SECURE_READ, "IOCTL_HID_ENABLE_SECURE_READ" },
+          { wdk::IOCTL_HID_DISABLE_SECURE_READ, "IOCTL_HID_DISABLE_SECURE_READ" },
+          { wdk::IOCTL_HID_DEVICERESET_NOTIFICATION, "IOCTL_HID_DEVICERESET_NOTIFICATION" }
+        });
+
+        constexpr auto ioctl_name(u32 io_control_code) noexcept -> string_view {
+            const auto found = ioctl_names.find(io_control_code);
+            if (found != ioctl_names.end())
+                return { found->second.data(), found->second.size() };
+
+            return "UNKNOWN_IOCTL";
+        }
 
         inline constexpr auto default_report_descriptor = into<array>(
           as_bytes,

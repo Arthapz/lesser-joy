@@ -60,6 +60,7 @@ export namespace wdk {
     using ::WDF_OBJECT_ATTRIBUTES_INIT;
     using ::WDF_PNPPOWER_EVENT_CALLBACKS_INIT;
     using ::WDF_REL_TIMEOUT_IN_SEC;
+    using ::WDF_REL_TIMEOUT_IN_MS;
     using ::WDF_REQUEST_SEND_OPTIONS_INIT;
     using ::WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT;
     using ::WdfDeviceAssignProperty;

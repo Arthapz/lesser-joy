@@ -58,10 +58,20 @@ export namespace lj {
             static auto create(const device_context&) -> system_result<ref_ptr<usb_context>>;
 
             auto device_entry() noexcept -> system_result<void>;
-            auto device_exit() const noexcept -> system_result<void>;
+            auto device_exit() noexcept -> system_result<void>;
 
             auto send_data(array_view<const byte>, endpoint_type) const noexcept -> system_result<void>;
             auto send_data_sync(array_view<const byte>, endpoint_type) const noexcept -> system_result<void>;
+
+            // like send_data but waits for the controller to accept the write, so a consumer such as
+            // joy.cpl or hidapi gets a real failure instead of "the USB queue accepted the request".
+            auto send_data_bounded(array_view<const byte>, endpoint_type, ulong) const noexcept -> system_result<void>;
+
+            // the feature mask that gates rumble is set once at D0Entry; a reset by the HID stack silently
+            // drops it, so the next output report has to re-arm it.
+            auto mark_needs_rearm() noexcept -> void;
+            auto needs_rearm() const noexcept -> bool;
+            auto rearm_features() noexcept -> system_result<void>;
 
             auto get_data_sync() const noexcept -> system_result<hid::command_report_buffer>;
 
@@ -120,6 +130,26 @@ export namespace lj {
 
             locked<hid::input_report_buffer> last_input_report_;
 
+            // WDF allows a single in-flight I/O per pipe and the ioqueue is dispatched parallel, so two
+            // consumers issuing output reports can interleave a format+send pair in the middle of a report.
+            // the pipe is wrapped because locked<T> asserts a non-null value for pointer payloads
+            // (stormkit/core/parallelism/locked.cppm:294), which is wrong for a pipe that legitimately
+            // starts null while the context is being built.
+            struct write_guard {
+                wdk::WDFUSBPIPE pipe = nullptr;
+            };
+
+            locked<write_guard> hid_out_pipe_    = {};
+            locked<write_guard> command_out_pipe_ = {};
+
+            // input report 0x09, offset 0x0B: 0x38 when feature bit 5 (rumble) is set, 0x30 otherwise.
+            // @see https://github.com/ndeadly/switch2_controller_research/blob/master/hid_reports.md#input-report-0x09
+            byte rumble_gate_ = 0x00_b;
+
+            // set when the HID stack resets the device: the feature mask is gone and must be re-sent
+            // before the next output report is meaningful.
+            bool needs_rearm_ = false;
+
             std::optional<string> product_string_;
             std::optional<string> serial_string_;
         };
@@ -148,6 +178,8 @@ namespace lj::transport {
           device_ { device },
           hid_ { std::move(hid) },
           command_ { std::move(command) },
+          hid_out_pipe_ { std::in_place, hid_.out_pipe },
+          command_out_pipe_ { std::in_place, command_.out_pipe },
           descriptor_ { std::move(descriptor) },
           product_string_ { std::move(product_string) },
           serial_string_ { std::move(serial_string) } {
@@ -162,6 +194,10 @@ namespace lj::transport {
           command_ { std::move(other.command_) },
           descriptor_ { std::exchange(other.descriptor_, {}) },
           joysticks_ { std::move(other.joysticks_) },
+          hid_out_pipe_ { std::move(other.hid_out_pipe_) },
+          command_out_pipe_ { std::move(other.command_out_pipe_) },
+          rumble_gate_ { other.rumble_gate_ },
+          needs_rearm_ { other.needs_rearm_ },
           product_string_ { std::exchange(other.product_string_, std::nullopt) },
           serial_string_ { std::exchange(other.serial_string_, std::nullopt) } {
         {
@@ -183,6 +219,10 @@ namespace lj::transport {
         command_        = std::move(other.command_);
         descriptor_     = std::exchange(other.descriptor_, {});
         joysticks_      = std::move(other.joysticks_);
+        hid_out_pipe_   = std::move(other.hid_out_pipe_);
+        command_out_pipe_ = std::move(other.command_out_pipe_);
+        rumble_gate_  = other.rumble_gate_;
+        needs_rearm_  = other.needs_rearm_;
         product_string_ = std::exchange(other.product_string_, std::nullopt);
         serial_string_  = std::exchange(other.serial_string_, std::nullopt);
         {
@@ -245,6 +285,20 @@ namespace lj::transport {
         }
 
         return {};
+    }
+
+    ////////////////////////////////////////
+    ////////////////////////////////////////
+    STORMKIT_FORCE_INLINE
+    auto usb_context::mark_needs_rearm() noexcept -> void {
+        needs_rearm_ = true;
+    }
+
+    ////////////////////////////////////////
+    ////////////////////////////////////////
+    STORMKIT_FORCE_INLINE
+    auto usb_context::needs_rearm() const noexcept -> bool {
+        return needs_rearm_;
     }
 
     ////////////////////////////////////////

@@ -15,6 +15,8 @@ import lj.cli.log;
 
 using namespace stormkit;
 
+using namespace stormkit::literals;
+
 namespace stdr = std::ranges;
 
 export namespace lj {
@@ -40,6 +42,13 @@ export namespace lj {
         failed_to_open_device,
     };
 
+    // must match lj::hid::output_report_size / output_report_id in driver/src/constants.cppm.
+    // the OS sizes every HID output report from HIDP_CAPS::OutputReportByteLength, which it derives from
+    // the report descriptor the driver publishes -- so a CLI buffer that disagrees with that number is
+    // rejected by its own driver.
+    inline constexpr auto output_report_size = 64_usize;
+    inline constexpr auto output_report_id   = 0x02_u8;
+
     class hid_device final {
         using private_tag = private_tag<hid_device>;
 
@@ -55,7 +64,7 @@ export namespace lj {
 
         static auto open(const hid_device_entry& entry) noexcept -> system_result<hid_device>;
 
-        auto send_output_report(array_view<const byte, 42> report) const noexcept -> system_result<void>;
+        auto send_output_report(array_view<const byte, output_report_size> report) const noexcept -> system_result<void>;
 
         auto handle() const noexcept -> hidapi::hid_device*;
 
@@ -201,8 +210,11 @@ namespace lj {
 
     /////////////////////////////////////
     /////////////////////////////////////
-    auto hid_device::send_output_report(array_view<const byte, 42> report) const noexcept -> system_result<void> {
+    auto hid_device::send_output_report(array_view<const byte, output_report_size> report) const noexcept
+      -> system_result<void> {
         EXPECTS(is_open());
+        EXPECTS(report[0] == as<byte>(output_report_id));
+
         auto result = hidapi::hid_send_output_report(hid_handle_,
                                                      reinterpret_cast<const uchar*>(stdr::data(report)),
                                                      stdr::size(report));
