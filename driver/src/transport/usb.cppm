@@ -130,6 +130,17 @@ export namespace lj {
 
             locked<hid::input_report_buffer> last_input_report_;
 
+            // the HID stack polls for input reports continuously. answering a poll straight from the cache
+            // without waiting turns that poll into a spin: the stack re-issues the ioctl as fast as it can,
+            // and the host spends its time in the framework's request plumbing instead of waiting on the
+            // device. the continuous reader signals this when a report lands, so a poll blocks on the device
+            // and the CPU goes back to zero between reports.
+            // mutable because waiting on and reading a cache is a logical-const operation; the hand-written
+            // move operations deliberately do not move these, a wait state belongs to the live context.
+            mutable std::mutex report_wait_mutex_;
+            mutable std::condition_variable report_wait_;
+            mutable bool report_pending_ = false;
+
             // WDF allows a single in-flight I/O per pipe and the ioqueue is dispatched parallel, so two
             // consumers issuing output reports can interleave a format+send pair in the middle of a report.
             // the pipe is wrapped because locked<T> asserts a non-null value for pointer payloads

@@ -25,6 +25,11 @@ namespace lj::transport {
         return button_state | analog_sticks | rumble;
     }();
 
+    // how long a HID input-report poll waits for the continuous reader to deliver before answering from
+    // the cache: comfortably above the device's report interval, well below anything a consumer would
+    // notice as a stuck poll.
+    static constexpr auto input_report_wait_ms = 200_u32;
+
     namespace {
         ////////////////////////////////////////
         ////////////////////////////////////////
@@ -256,6 +261,14 @@ namespace lj::transport {
 
         // Update input report
         usb.last_input_report_.assign(std::move(report));
+
+        // hand a waiting poll its report. this lock is released before the poll takes last_input_report_'s
+        // own lock, so the two are never held at the same time.
+        {
+            const auto lock = std::unique_lock { usb.report_wait_mutex_ };
+            usb.report_pending_ = true;
+        }
+        usb.report_wait_.notify_all();
     }
 
     ////////////////////////////////////////
@@ -530,6 +543,21 @@ namespace lj::transport {
     ////////////////////////////////////////
     ////////////////////////////////////////
     auto usb_context::write_report_to(wdk::WDFREQUEST request) const noexcept -> system_result<void> {
+        // block until the continuous reader delivers a report instead of answering from the cache: the HID
+        // stack polls continuously, and an instant answer turns its poll loop into a spin that burns CPU in
+        // the framework's request plumbing. bounded so a device that stops streaming cannot hang the poll.
+        auto waited = false;
+        {
+            auto lock = std::unique_lock { report_wait_mutex_ };
+            report_pending_ = false;
+            waited = report_wait_.wait_for(lock,
+                                           std::chrono::milliseconds { input_report_wait_ms },
+                                           [this] noexcept { return report_pending_; });
+        }
+
+        if (not waited)
+            wlog("No input report within {}ms -- answering with the last one received", input_report_wait_ms);
+
         return last_input_report_.read([&request](const auto& report) noexcept {
             return fill_wdf_request_memory(request, report);
         });

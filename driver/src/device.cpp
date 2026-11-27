@@ -78,8 +78,8 @@ namespace lj {
         hid_attributes_.ProductID = default_controller.pid;
         hid_descriptor_           = hid::default_descriptor;
         report_descriptor_        = hid::default_report_descriptor;
-        product_string_      = default_controller.product_string;
-        manufacturer_string_ = default_controller.manufacturer_string;
+        product_string_           = default_controller.product_string;
+        manufacturer_string_      = default_controller.manufacturer_string;
 
         // set BusReportedDeviceDesc so joy.cpl shows the profile name
         // DEVPKEY_Device_BusReportedDeviceDesc = {540b947e-8b40-45bc-a8a2-6a0b894cbda2}
@@ -266,7 +266,7 @@ namespace lj {
         };
 
         const auto write_ulong = [&](wdk::WDFREQUEST request, win32::ULONG value) noexcept {
-            auto payload = array<byte, sizeof(win32::ULONG)> {};
+            auto payload                                          = array<byte, sizeof(win32::ULONG)> {};
             *reinterpret_cast<win32::ULONG*>(stdr::data(payload)) = value;
 
             CustomLoggedTryOr(fill_wdf_request_memory(request, payload),
@@ -433,8 +433,7 @@ namespace lj {
             case wdk::IOCTL_UMDF_HID_GET_FEATURE: {
                 // see IOCTL_HID_GET_FEATURE below: refusing is correct only while the report descriptor
                 // declares no feature report at all.
-                wlog("{}: no feature report is declared in the report descriptor",
-                     lj::hid::ioctl_name(io_control_code));
+                wlog("{}: no feature report is declared in the report descriptor", lj::hid::ioctl_name(io_control_code));
                 status = wdk::STATUS_NOT_IMPLEMENTED;
             } break;
 
@@ -452,8 +451,7 @@ namespace lj {
             case wdk::IOCTL_UMDF_HID_SET_FEATURE: {
                 // refusing keeps the mask we set at D0Entry authoritative: a consumer cannot turn rumble
                 // off behind our back, but it also cannot turn it on for us. see IOCTL_HID_SET_FEATURE below.
-                wlog("{}: no feature report is declared in the report descriptor",
-                     lj::hid::ioctl_name(io_control_code));
+                wlog("{}: no feature report is declared in the report descriptor", lj::hid::ioctl_name(io_control_code));
                 status = wdk::STATUS_NOT_IMPLEMENTED;
             } break;
 
@@ -479,10 +477,8 @@ namespace lj {
             case wdk::IOCTL_HID_GET_DRIVER_CONFIG: {
                 dlog("IOCTL_HID_GET_DRIVER_CONFIG");
 
-                auto config = wdk::HID_DRIVER_CONFIG {
-                    .Size           = sizeof(wdk::HID_DRIVER_CONFIG),
-                    .RingBufferSize = device_ctx.ring_buffer_size()
-                };
+                auto config = wdk::HID_DRIVER_CONFIG { .Size           = sizeof(wdk::HID_DRIVER_CONFIG),
+                                                       .RingBufferSize = device_ctx.ring_buffer_size() };
 
                 CustomLoggedTryOr(fill_wdf_request_memory(request, bytes_of(config)),
                                   update_status,
@@ -617,8 +613,7 @@ namespace lj {
                 // honest refusal: the report descriptor declares no feature report, so the OS derives
                 // HIDP_CAPS::FeatureReportByteLength == 0 and there is no legal buffer size to answer into.
                 // supporting these means adding a feature report to the descriptor, not just a handler.
-                wlog("{}: no feature report is declared in the report descriptor",
-                     lj::hid::ioctl_name(io_control_code));
+                wlog("{}: no feature report is declared in the report descriptor", lj::hid::ioctl_name(io_control_code));
                 status = wdk::STATUS_NOT_IMPLEMENTED;
             } break;
 
