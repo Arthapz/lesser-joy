@@ -1,15 +1,12 @@
-module;
-
-#include "windows.hpp"
-
-#include <hidport.h>
-
 export module lesserjoy:constants;
 
 import std;
 import frozen;
 
 import stormkit.core;
+import stormkit.platform.win32;
+
+import wdk.hid;
 
 using namespace stormkit;
 using namespace stormkit::literals;
@@ -25,32 +22,32 @@ export namespace lj {
     };
 
     enum class direction : u8 {
-        HOST_TO_DEVICE = 0x91,
-        DEVICE_TO_HOST = 0x01,
+        host_to_device = 0x91,
+        device_to_host = 0x01,
     };
 
     enum class transport_type : u8 {
-        USB       = 0x00,
-        BLUETOOTH = 0x01,
+        usb       = 0x00,
+        bluetooth = 0x01,
     };
 
-    enum class Validate {
-        YES,
-        NO,
+    enum class validate {
+        yes,
+        no,
     };
 
-    inline constexpr auto DEV_INTERFACE_HID_GUID = GUID {
+    inline constexpr auto dev_interface_hid_guid = win32::GUID {
         0x4D1E55B2,
         0xF16F,
         0x11CF,
         { 0x88, 0xCB, 0x00, 0x11, 0x11, 0x00, 0x00, 0x30 }
     };
 
-    inline constexpr auto DRIVER_POOL_TAG  = u32 { 'lyoj' };
-    inline constexpr auto DRIVER_MAX_SLOTS = 8_usize;
+    inline constexpr auto drive_pool_tag  = u32 { 'lyoj' };
+    inline constexpr auto drive_max_slots = 8_usize;
 
-    // inline constexpr auto CONTROLLERS_TYPE = frozen::unordered_map<frozen::string, controller_type, 1> {
-    inline constexpr auto CONTROLLERS_TYPE = make_static_hash_map<frozen::string, controller_type>({
+    // inline constexpr auto controllers_type = frozen::unordered_map<frozen::string, controller_type, 1> {
+    inline constexpr auto controllers_type = make_static_hash_map<frozen::string, controller_type>({
       { "pro_controller",
        { .name                = "Nintendo Switch 2 Pro Controller",
           .vendor              = "Nintendo",
@@ -60,70 +57,16 @@ export namespace lj {
           .manufacturer_string = "Nintendo Co., Ltd." } }
     });
 
-    // inline constexpr auto CONTROLLERS_MAP = frozen::unordered_map<u32, frozen::string, 1> {
-    inline constexpr auto CONTROLLERS_MAP = make_static_hash_map<u32, frozen::string>({
-      { CONTROLLERS_TYPE.at("pro_controller").vid | (CONTROLLERS_TYPE.at("pro_controller").pid << 16), "pro_controller" }
+    // inline constexpr auto controllers_map = frozen::unordered_map<u32, frozen::string, 1> {
+    inline constexpr auto controllers_map = make_static_hash_map<u32, frozen::string>({
+      { controllers_type.at("pro_controller").vid | (controllers_type.at("pro_controller").pid << 16), "pro_controller" }
     });
 
     namespace hid {
-        inline constexpr auto DISABLE_SCALING = true;
+        inline constexpr auto input_report_size  = 64_usize;
+        inline constexpr auto output_report_size = 42_usize;
 
-        inline constexpr auto INPUT_REPORT_SIZE        = 64_usize;
-        inline constexpr auto INPUT_REPORT_SIZE_SCALED = DISABLE_SCALING ? 64_usize : 66_usize;
-        inline constexpr auto OUTPUT_REPORT_SIZE       = 42_usize;
-
-        inline constexpr auto DEFAULT_OUTPUT_REPORT = into<
-          array>(as_bytes,
-                 {
-                   // report ID
-                   0x02,
-                   // rumble left
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   // rumble right
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   // reserved
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                   0x00,
-                 });
-
-        inline constexpr auto DEFAULT_REPORT_DESCRIPTOR_NOT_SCALED = into<array>(
+        inline constexpr auto default_report_descriptor = into<array>(
           as_bytes,
           {
             // clang-format off
@@ -166,7 +109,7 @@ export namespace lj {
             0x09, 0x30,       //    Usage (X) 
             0x09, 0x31,       //    Usage (Y)
             0x09, 0x33,       //    Usage (Rx)
-            0x09, 0x34,       //    Usage (Rz)
+            0x09, 0x35,       //    Usage (Rz)
 
             0x26, 0xFF, 0x0F, //    Logical Maximum (4095)
             0x95, 0x04,       //    Report Count (4)
@@ -192,76 +135,13 @@ export namespace lj {
                   // clang-format on
           });
 
-        inline constexpr auto DEFAULT_REPORT_DESCRIPTOR_SCALED = into<
-          array>(as_bytes,
-                 {
-                   // clang-format off
-            0x05, 0x01,
-            0x09, 0x05,
-            0xA1, 0x01,
-            0x85, 0x05,
-
-            0x05, 0xFF,
-            0x09, 0x01,
-            0x15, 0x00,
-            0x26, 0xFF, 0x00,
-            0x95, 0x3F,
-            0x75, 0x08,
-            0x81, 0x02,
-            0x85, 0x09,
-            0x09, 0x01,
-            0x95, 0x02,
-            0x81, 0x02,
-            0x05, 0x09,
-             0x19, 0x01,
-             0x29, 0x15,
-             0x25, 0x01,
-             0x95, 0x15,
-             0x75, 0x01,
-             0x81, 0x02,
-             0x95, 0x01,
-             0x75, 0x03,
-             0x81, 0x03,
-             0x05, 0x01,
-             0x09, 0x01,
-
-             0xA1, 0x00,
-                0x09, 0x30,
-                0x09, 0x31,
-                0x09, 0x33,
-                0x09, 0x34,
-
-                0x26, 0xFF, 0xFF, //0x00, 0x00, // 65535
-                0x95, 0x04, // count 4
-                0x75, 0x10, // size 16 bits
-
-                0x81, 0x02,
-             0xC0,
-
-             0x05, 0xFF,
-             0x09, 0x02,
-             0x26, 0xFF, 0x00,
-             0x95, 0x34,
-             0x75, 0x08,
-             0x81, 0x02,
-             0x85, 0x02,
-             0x09, 0x01,
-             0x95, 0x3F,
-             0x91, 0x02,
-             0xC0
-                   // clang-format on
-                 });
-
-        inline constexpr auto DEFAULT_REPORT_DESCRIPTOR = DISABLE_SCALING ? DEFAULT_REPORT_DESCRIPTOR_NOT_SCALED
-                                                                          : DEFAULT_REPORT_DESCRIPTOR_SCALED;
-
-        inline constexpr auto DEFAULT_DESCRIPTOR = HID_DESCRIPTOR {
-            .bLength         = sizeof(HID_DESCRIPTOR),
+        inline constexpr auto default_descriptor = wdk::HID_DESCRIPTOR {
+            .bLength         = sizeof(wdk::HID_DESCRIPTOR),
             .bDescriptorType = 0x21, // HID == 0x21
             .bcdHID          = 0x0111,
             .bCountry        = 0x00, // UNUSED
             .bNumDescriptors = 0x01,
-            .DescriptorList  = { { .bReportType = 0x22, .wReportLength = sizeof(DEFAULT_REPORT_DESCRIPTOR) } }
+            .DescriptorList  = { { .bReportType = 0x22, .wReportLength = sizeof(default_report_descriptor) } }
         };
     } // namespace hid
 } // namespace lj
