@@ -18,6 +18,10 @@ using namespace stormkit::literals;
 namespace stdr = std::ranges;
 
 namespace lj {
+    // how long an output-report ioctl waits for the controller to accept the write before the consumer is
+    // told it failed: rumble consumers care about the answer, not about the USB queue accepting the request.
+    static constexpr auto output_report_send_timeout_ms = 1000_u32;
+
     ////////////////////////////////////////
     ////////////////////////////////////////
     auto device_context::create(wdk::WDFDRIVER driver, wdk::PWDFDEVICE_INIT device_init) -> wdk::NTSTATUS {
@@ -250,10 +254,31 @@ namespace lj {
                 if (not usb.rearm_features()) wlog("Failed to re-arm the feature mask!");
             }
 
-            CustomLoggedTryOr(hid::ioctl::write_report(request, device_ctx.usb_ctx()),
+            // the bytes to send arrive in the request's input buffer. HidD_SetOutputReport -- what hidapi,
+            // joy.cpl and Steam call for rumble -- is documented as "Send an output report to a HID device"
+            // (hidsdi.h:272), so answering this ioctl without forwarding the payload means the controller
+            // never hears about the rumble at all, however correct the vibration command path is.
+            const auto buffer = get_wdf_request_memory(request);
+            if (not buffer or stdr::size(*buffer) < hid::output_report_size) {
+                wlog("{}: input buffer too small for an output report!", lj::hid::ioctl_name(io_control_code));
+                status = wdk::STATUS_INVALID_PARAMETER;
+                return;
+            }
+
+            if (const auto report_id = (*buffer)[0]; report_id != as<byte>(hid::output_report_id))
+                wlog("{}: consumer sent report id {:#x}, the descriptor declares {:#x} -- sending anyway",
+                     lj::hid::ioctl_name(io_control_code),
+                     as<u8>(report_id),
+                     as<u8>(hid::output_report_id));
+
+            // bounded on purpose: the consumer gets a real answer about the controller rather than
+            // "the USB queue accepted the request".
+            CustomLoggedTryOr(device_ctx.usb_ctx().send_data_bounded(*buffer,
+                                                                     transport::usb_context::endpoint_type::hid,
+                                                                     output_report_send_timeout_ms),
                               update_status,
                               lj::elog,
-                              "IOCTL Failed to write report!");
+                              "IOCTL Failed to send the output report!");
         };
 
         // METHOD_BUFFERED iocontrols (hidclass.h:141-149) carry a plain ULONG. these two helpers read and
